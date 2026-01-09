@@ -8,7 +8,7 @@ import pandas as pd
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="JSON 3.0 Chat", layout="centered")
-st.title("🤖 漂亮的 Zhi Qi Assitant")
+st.title("🤖 Json 3.0 Assistant")
 
 # Initialize Chat History
 if "messages" not in st.session_state:
@@ -108,4 +108,5 @@ if prompt := st.chat_input("Type a message..."):
 
             except Exception as e:
                 st.error(f"Error: {e}")
+
 
