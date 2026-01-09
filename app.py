@@ -19,7 +19,7 @@ with col2:
         # Fallback if user forgot to upload file
         st.header("🤖 Monin Assistant")
 
-st.markdown("<h3 style='text-align: center;'>Your Data Automation Partner</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center;'>Your Innovative Drink Partner</h3>", unsafe_allow_html=True)
 
 # Initialize Chat History
 if "messages" not in st.session_state:
@@ -102,3 +102,4 @@ if prompt := st.chat_input("Type a message..."):
 
             except Exception as e:
                 st.error(f"Error: {e}")
+
