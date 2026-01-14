@@ -18,7 +18,6 @@ with col2:
 
 st.markdown("<h3 style='text-align: center;'>Your Data Automation Partner</h3>", unsafe_allow_html=True)
 
-# Initialize Chat History
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -38,16 +37,15 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Logger Offline: {e}")
 
-# --- 3. THE AI BRAIN (UPDATED FOR STABILITY) ---
-# We switch to 'gemini-pro' to fix the 404 error.
-model = genai.GenerativeModel("gemini-pro")
-
+# --- 3. THE AI BRAIN (Latest Flash Model) ---
 HIDDEN_PROMPT = """
 You are the Monin Data Assistant.
 1. If the user provides data (text or file), convert it to clean JSON.
 2. If the user asks a question, answer normally.
 3. If an image is provided, extract all text/data into JSON.
 """
+# We use the newest model. The 'Factory Reset' will make this work.
+model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
 # --- 4. CHAT HISTORY ---
 for message in st.session_state.messages:
@@ -58,7 +56,7 @@ for message in st.session_state.messages:
 col1, col2 = st.columns([0.15, 0.85]) 
 with col1:
     with st.popover("📎 Attach", use_container_width=True):
-        uploaded_file = st.file_uploader("Upload Image/CSV", type=["png", "jpg", "csv", "txt"])
+        uploaded_file = st.file_uploader("Upload File", type=["png", "jpg", "csv", "txt"])
         file_content = None
         file_type = ""
         if uploaded_file:
@@ -70,7 +68,7 @@ with col1:
             else:
                 file_content = uploaded_file.getvalue().decode("utf-8")
 
-# --- 6. CHAT INPUT (UPDATED) ---
+# --- 6. CHAT INPUT ---
 if prompt := st.chat_input("Type a message..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -81,9 +79,7 @@ if prompt := st.chat_input("Type a message..."):
     with st.chat_message("assistant"):
         with st.spinner("Analyzing..."):
             try:
-                # We construct the input list manually for the Pro model
-                inputs = [HIDDEN_PROMPT, prompt]
-                
+                inputs = [prompt]
                 if file_content:
                     inputs.append(file_content)
                     if "image" in file_type:
@@ -91,14 +87,12 @@ if prompt := st.chat_input("Type a message..."):
                     else:
                         inputs.append(f"(Data: {file_content})")
 
-                # Generate Content
                 response = model.generate_content(inputs)
                 ai_text = response.text
                 
                 st.markdown(ai_text)
                 st.session_state.messages.append({"role": "assistant", "content": ai_text})
 
-                # Log to Google Sheet
                 if sheet:
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     sheet.append_row([timestamp, prompt, ai_text])
