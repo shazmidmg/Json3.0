@@ -41,14 +41,35 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Logger Offline: {e}")
 
-# --- 3. THE AI BRAIN ---
+# # --- 3. THE AI BRAIN ---
+# HIDDEN_PROMPT = """
+# You are the Monin Data Assistant.
+# 1. If the user provides data (text or file), convert it to clean JSON.
+# 2. If the user asks a question, answer normally.
+# 3. If an image is provided, extract all text/data into JSON.
+# """
+# model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
+
+# --- 3. THE AI BRAIN (Classic Mode) ---
+# We use the older 'gemini-pro' model because it works on all server versions.
+model = genai.GenerativeModel("gemini-pro")
+
 HIDDEN_PROMPT = """
 You are the Monin Data Assistant.
 1. If the user provides data (text or file), convert it to clean JSON.
 2. If the user asks a question, answer normally.
 3. If an image is provided, extract all text/data into JSON.
 """
-model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
+
+def get_ai_response(user_input, attachment=None):
+    # For the classic model, we must manually combine the system prompt + user input
+    full_prompt = [HIDDEN_PROMPT, "User Input:", user_input]
+    
+    if attachment:
+        full_prompt.append(attachment)
+        
+    response = model.generate_content(full_prompt)
+    return response.text
 
 # --- 4. CHAT HISTORY ---
 for message in st.session_state.messages:
@@ -102,4 +123,5 @@ if prompt := st.chat_input("Type a message..."):
 
             except Exception as e:
                 st.error(f"Error: {e}")
+
 
