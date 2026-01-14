@@ -4,24 +4,26 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from PIL import Image
+import os
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="Monin Assistant", layout="centered")
+st.set_page_config(page_title="Monin Innovation Lab", layout="centered")
 
 # Display Logo
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     try:
-        # We try to load the logo you uploaded
         st.image("logo.png", use_container_width=True) 
     except:
-        st.header("🤖 Monin Assistant")
+        st.header("🍹 Monin Lab")
 
-st.markdown("<h3 style='text-align: center;'>Your Data Automation Partner</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center;'>Drink Innovation Manager</h3>", unsafe_allow_html=True)
 
-# Initialize Chat History
+# Initialize Session State
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "knowledge_base" not in st.session_state:
+    st.session_state.knowledge_base = [] # Stores the uploaded PDF references
 
 # --- 2. AUTHENTICATION ---
 sheet = None
@@ -39,76 +41,83 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Logger Offline: {e}")
 
-# --- 3. THE AI BRAIN (UPDATED) ---
+# --- 3. KNOWLEDGE LOADER (The "Option B" Magic) ---
+# This runs once to load your PDFs into the AI's brain
+if not st.session_state.knowledge_base:
+    with st.spinner("📚 Loading Monin Knowledge Base (Bible & Catalogs)..."):
+        try:
+            files_to_load = ["bible.pdf", "catalog.pdf", "studies.pdf"] # Must match GitHub filenames
+            loaded_files = []
+            
+            for filename in files_to_load:
+                if os.path.exists(filename):
+                    # Upload to Gemini File API (Temporary cloud storage for analysis)
+                    uploaded_ref = genai.upload_file(filename)
+                    loaded_files.append(uploaded_ref)
+                    st.toast(f"✅ Loaded: {filename}")
+            
+            st.session_state.knowledge_base = loaded_files
+        except Exception as e:
+            st.error(f"Knowledge Load Error: {e}")
+
+# --- 4. THE PERSONA PROMPT ---
 HIDDEN_PROMPT = """
-You are the Monin Data Assistant.
-1. If the user provides data (text or file), convert it to clean JSON.
-2. If the user asks a question, answer normally.
-3. If an image is provided, extract all text/data into JSON.
+You are the Talented Drink Innovation Manager at Monin Malaysia. 
+Your Goal: Craft innovative drink ideas that are commercially suitable and make customers fall in love.
+
+KNOWLEDGE BASE INSTRUCTION:
+You have been provided with Monin PDF documents (Flavor Bible, Catalog, etc). 
+ALWAYS refer to these documents for available flavors, trends, and application techniques.
+Do NOT invent Monin products that do not exist in the provided catalog.
+
+Discovery Protocol:
+1. Start by asking the user:
+   - "What is the name of the cafe/business and location?"
+   - "What is the direction/goal for this drink ideation?"
+   - "Which category best describes it? (Artisanal, Multi-Chain, etc?)"
+
+2. Follow up (Max 3 questions at a time):
+   - Current flavors/drinks served?
+   - Any specific new concept or occasion?
+   - Operational capacity (Staff skill/Equipment)?
+
+Output Rules:
+- When generating ideas, provide 3 categories: Traditional, Modern Heritage, Crazy.
+- Validate every ingredient against the provided Catalog/Bible.
+- If the user finalizes ideas, provide Recipe, Preparation, and Garnish.
 """
 
-# We use the model explicitly found in your list: gemini-2.0-flash
-# This model is smart enough to handle text AND images in one go.
+# Initialize Model (Gemini 2.0 Flash is best for heavy PDF reading)
 try:
     model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
 except:
-    # Fallback to 'gemini-flash-latest' if specific version fails
     model = genai.GenerativeModel("gemini-flash-latest", system_instruction=HIDDEN_PROMPT)
 
-# --- 4. CHAT HISTORY ---
+# --- 5. CHAT HISTORY ---
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- 5. THE "ATTACH" BUTTON ---
-# Placed right above the chat input
-col1, col2 = st.columns([0.15, 0.85]) 
-with col1:
-    with st.popover("📎 Attach", use_container_width=True):
-        uploaded_file = st.file_uploader("Upload File", type=["png", "jpg", "jpeg", "csv", "txt"])
-        file_content = None
-        file_type = ""
-        is_image = False
-        
-        if uploaded_file:
-            file_type = uploaded_file.type
-            st.caption("✅ File Attached")
-            if "image" in file_type:
-                st.image(uploaded_file, width=150)
-                file_content = Image.open(uploaded_file)
-                is_image = True
-            else:
-                file_content = uploaded_file.getvalue().decode("utf-8")
-
 # --- 6. CHAT INPUT ---
-if prompt := st.chat_input("Type a message..."):
+if prompt := st.chat_input("Start the session..."):
     
-    # 1. Show User Message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-        if uploaded_file:
-            st.markdown(f"*(Attached: {uploaded_file.name})*")
 
-    # 2. Generate AI Response
     with st.chat_message("assistant"):
-        with st.spinner("Analyzing..."):
+        with st.spinner("Consulting the Flavor Bible..."):
             try:
-                # Prepare inputs for Gemini 2.0
+                # We feed the Prompt + The PDF Knowledge Base + The User Message
                 inputs = [prompt]
                 
-                if file_content:
-                    inputs.append(file_content)
-                    if is_image:
-                        inputs.append("(Extract data from this image)")
-                    else:
-                        inputs.append(f"(Data from file: {file_content})")
-
-                # Generate
+                # Attach the Pre-loaded Knowledge Base (PDFs) to this request
+                if st.session_state.knowledge_base:
+                    inputs.extend(st.session_state.knowledge_base)
+                
                 response = model.generate_content(inputs)
                 ai_text = response.text
                 
-                # Show & Save
                 st.markdown(ai_text)
                 st.session_state.messages.append({"role": "assistant", "content": ai_text})
 
