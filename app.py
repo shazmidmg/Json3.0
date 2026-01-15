@@ -8,35 +8,46 @@ import os
 import time
 import pandas as pd
 
-# --- 1. CONFIGURATION & CSS ---
+# --- 1. CONFIGURATION & NUCLEAR GRID CSS ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
 st.markdown("""
 <style>
-    /* 1. Force Sidebar columns to stay side-by-side */
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important;
+    /* 1. FORCE SIDEBAR TO USE CSS GRID (The Magic Fix) */
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] {
+        display: grid !important;
+        grid-template-columns: 1fr 40px !important; /* Name gets ALL space, Trash gets exactly 40px */
+        gap: 5px !important;
         align-items: center !important;
-        gap: 2px !important; /* MINIMAL GAP TO SAVE SPACE */
     }
     
-    /* 2. TRASH BUTTON: Fixed Small Size */
+    /* 2. REMOVE STREAMLIT'S DEFAULT COLUMN WIDTHS */
+    [data-testid="stSidebar"] [data-testid="column"] {
+        width: auto !important;
+        flex: none !important;
+        min-width: 0 !important;
+    }
+    
+    /* 3. TRASH BUTTON STYLE */
     [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) button {
-        width: 35px !important;
-        min-width: 35px !important;
-        max-width: 35px !important;
-        height: 35px !important;
+        width: 40px !important;
+        height: 40px !important;
         padding: 0px !important;
+        margin: 0px !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
         border: 1px solid #444 !important;
     }
-    
-    /* 3. NAME BUTTON: Allow it to shrink if needed */
+
+    /* 4. NAME BUTTON STYLE (Prevent overflow) */
     [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) button {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        padding-left: 5px !important;
-        padding-right: 5px !important;
+        width: 100% !important;
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -101,7 +112,7 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 5. SIDEBAR UI (MOBILE OPTIMIZED) ---
+# --- 5. SIDEBAR UI (GRID LAYOUT) ---
 with st.sidebar:
     st.header("🗄️ Tier 1 History")
     count = len(st.session_state.chat_sessions)
@@ -128,8 +139,9 @@ with st.sidebar:
         st.warning("No active chats.")
     else:
         for name in names[::-1]:
-            # FIXED RATIO: Give name 75%, Trash 25% (Better for mobile)
-            col1, col2 = st.columns([0.65, 0.35])
+            # WE STILL CREATE 2 COLUMNS, BUT CSS NOW CONTROLS THEIR SIZE
+            # The CSS 'grid-template-columns: 1fr 40px' overrides these ratios
+            col1, col2 = st.columns([1, 1]) 
             
             label = name
             type_style = "secondary"
@@ -137,10 +149,12 @@ with st.sidebar:
                 label = f"🟢 {name}"
                 type_style = "primary"
             
+            # NAME BUTTON
             if col1.button(label, key=f"btn_{name}", use_container_width=True, type=type_style):
                 st.session_state.active_session_id = name
                 st.rerun()
             
+            # TRASH BUTTON
             if col2.button("🗑️", key=f"del_{name}"):
                 del st.session_state.chat_sessions[name]
                 if st.session_state.active_session_id == name:
@@ -240,5 +254,3 @@ if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             except Exception as e:
                 st.error(f"Error: {e}")
-
-
