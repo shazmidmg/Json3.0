@@ -42,30 +42,26 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Logger Offline: {e}")
 
-# --- 3. KNOWLEDGE LOADER (Bible, Studies, Clients) ---
-# This runs automatically to load your specific files
+# --- 3. KNOWLEDGE LOADER (The Persistent PDFs) ---
+# This loads the Flavor Bible/Client Data into the brain ONCE.
 if not st.session_state.knowledge_base:
     with st.spinner("📚 Loading Knowledge Base (Bible, Studies, CSV)..."):
         try:
-            # We look for these 3 specific files
             files_to_load = ["bible.pdf", "studies.pdf", "clients.csv"]
             loaded_files = []
             
             for filename in files_to_load:
                 if os.path.exists(filename):
                     st.toast(f"Uploading {filename} to Brain...")
-                    # Upload to Gemini File API
                     uploaded_ref = genai.upload_file(filename)
                     
-                    # Wait for PDF processing (Images/PDFs take a few seconds)
+                    # Wait for processing
                     while uploaded_ref.state.name == "PROCESSING":
                         time.sleep(1)
                         uploaded_ref = genai.get_file(uploaded_ref.name)
                         
                     loaded_files.append(uploaded_ref)
                     st.toast(f"✅ Active: {filename}")
-                else:
-                    st.warning(f"⚠️ File not found: {filename} (Did you upload it to GitHub?)")
             
             st.session_state.knowledge_base = loaded_files
         except Exception as e:
@@ -77,29 +73,26 @@ You are the Talented Drink Innovation Manager at Monin Malaysia.
 Your Goal: Craft innovative drink ideas that are commercially suitable and make customers fall in love.
 
 KNOWLEDGE BASE INSTRUCTION:
-You have access to 3 key documents:
-1. 'bible.pdf' (The Flavor Bible) - Use this for flavor pairing logic.
-2. 'studies.pdf' (Case Studies) - Use this for style and presentation references.
-3. 'clients.csv' (Client Data) - Use this to understand market segments.
+You have access to 3 key documents (Bible, Studies, Client Data). 
+ALWAYS refer to these documents for flavor pairing logic and trends.
 
 Discovery Protocol:
 1. Start by asking the user:
    - "What is the name of the cafe/business and location?"
-   - "What is the direction/goal for this drink ideation?"
-   - "Which category best describes it? (Artisanal, Multi-Chain, etc?)"
+   - "What is the direction/goal?"
+   - "Which category best describes it?"
 
-2. Follow up (Max 3 questions at a time):
-   - Current flavors/drinks served?
-   - Any specific new concept or occasion?
-   - Operational capacity (Staff skill/Equipment)?
+2. Follow up (Max 3 questions):
+   - Current flavors?
+   - New concept/occasion?
+   - Operational capacity?
 
 Output Rules:
-- When generating ideas, provide 3 categories: Traditional, Modern Heritage, Crazy.
-- Validate every ingredient against the provided knowledge.
-- If the user finalizes ideas, provide Recipe, Preparation, and Garnish.
+- Provide ideas in 3 categories: Traditional, Modern Heritage, Crazy.
+- Validate ingredients against the provided knowledge.
+- If finalized, provide Recipe, Preparation, and Garnish.
 """
 
-# Initialize Model
 try:
     model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
 except:
@@ -110,21 +103,48 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- 6. CHAT INPUT ---
+# --- 6. [RESTORED] USER ATTACHMENT BUTTON ---
+# This allows YOU to upload a new image/menu during the chat
+col1, col2 = st.columns([0.15, 0.85]) 
+with col1:
+    with st.popover("📎 Attach", use_container_width=True):
+        user_uploaded_file = st.file_uploader("Upload Image/Menu", type=["png", "jpg", "jpeg", "csv", "txt"])
+        user_file_content = None
+        user_is_image = False
+        
+        if user_uploaded_file:
+            st.caption("✅ Ready to send")
+            if "image" in user_uploaded_file.type:
+                st.image(user_uploaded_file, width=150)
+                user_file_content = Image.open(user_uploaded_file)
+                user_is_image = True
+            else:
+                user_file_content = user_uploaded_file.getvalue().decode("utf-8")
+
+# --- 7. CHAT INPUT ---
 if prompt := st.chat_input("Start the session..."):
     
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
+        if user_uploaded_file:
+            st.markdown(f"*(User Attached: {user_uploaded_file.name})*")
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
-                # We feed the Prompt + The 3 Loaded Files + The User Message
+                # 1. Start with the text prompt
                 inputs = [prompt]
                 
+                # 2. Add the Persistent Knowledge (PDFs)
                 if st.session_state.knowledge_base:
                     inputs.extend(st.session_state.knowledge_base)
+                
+                # 3. Add the User's New Upload (if any)
+                if user_file_content:
+                    inputs.append(user_file_content)
+                    if user_is_image:
+                        inputs.append("(Analyze this specific user-uploaded image in context of the request)")
                 
                 response = model.generate_content(inputs)
                 ai_text = response.text
