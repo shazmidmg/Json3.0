@@ -43,9 +43,8 @@ except Exception as e:
     st.warning(f"⚠️ Logger Offline: {e}")
 
 # --- 3. KNOWLEDGE LOADER (SLOW & STEADY) ---
-# We added a 'time.sleep' to prevent Error 429
 if not st.session_state.knowledge_base:
-    with st.spinner("📚 Loading Knowledge Base (This takes 30s to prevent crashing)..."):
+    with st.spinner("📚 Loading Knowledge Base (Takes 40s - Please Wait)..."):
         try:
             files_to_load = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
             loaded_files = []
@@ -65,15 +64,14 @@ if not st.session_state.knowledge_base:
                     loaded_files.append(uploaded_ref)
                     st.toast(f"✅ Active: {filename}")
                     
-                    # 3. CRITICAL: Take a 10-second breath before the next file
-                    # This prevents the 429 "Resource Exhausted" error
+                    # 3. CRITICAL: 10s Pause to prevent 'Resource Exhausted'
                     time.sleep(10) 
                     
                 else:
                     print(f"File skipped: {filename}")
             
             st.session_state.knowledge_base = loaded_files
-            st.success("✅ All Knowledge Loaded Successfully!")
+            st.success("✅ All Knowledge Loaded!")
         except Exception as e:
             st.error(f"Knowledge Load Error: {e}")
 
@@ -93,25 +91,27 @@ Example: "Based on the Flavor Bible (Part 1)..." or "According to client data...
 
 Discovery Protocol:
 1. Ask the 3 standard questions (Name/Location, Direction, Category).
-2. Then ask follow-ups (Current flavors, operational capacity).
+2. Then ask follow-ups.
 
 Output Rules:
 - Provide ideas in 3 categories: Traditional, Modern Heritage, Crazy.
 - Validate ingredients against the provided knowledge.
 """
 
-# We switch to 1.5 Flash as Primary (More stable for large context)
+# --- 5. INITIALIZE MODEL (FIXED FOR 2.0) ---
+# We prioritize the model we KNOW you have: gemini-2.0-flash
 try:
-    model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
-except:
     model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
+except:
+    # Fallback just in case
+    model = genai.GenerativeModel("gemini-flash-latest", system_instruction=HIDDEN_PROMPT)
 
-# --- 5. CHAT HISTORY ---
+# --- 6. CHAT HISTORY ---
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- 6. USER ATTACHMENT BUTTON ---
+# --- 7. USER ATTACHMENT BUTTON ---
 col1, col2 = st.columns([0.15, 0.85]) 
 with col1:
     with st.popover("📎 Attach", use_container_width=True):
@@ -128,7 +128,7 @@ with col1:
             else:
                 user_file_content = user_uploaded_file.getvalue().decode("utf-8")
 
-# --- 7. CHAT INPUT ---
+# --- 8. CHAT INPUT ---
 if prompt := st.chat_input("Start the session..."):
     
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -142,9 +142,11 @@ if prompt := st.chat_input("Start the session..."):
             try:
                 inputs = [prompt]
                 
+                # Add Knowledge Base
                 if st.session_state.knowledge_base:
                     inputs.extend(st.session_state.knowledge_base)
                 
+                # Add User Upload
                 if user_file_content:
                     inputs.append(user_file_content)
                     if user_is_image:
