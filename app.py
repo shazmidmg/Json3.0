@@ -8,31 +8,35 @@ import os
 import time
 import pandas as pd
 
-# --- 1. CONFIGURATION & MOBILE CSS FIX ---
+# --- 1. CONFIGURATION & NUCLEAR CSS FIX ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
-# CSS HACK: 
-# 1. Force sidebar columns to stay side-by-side (No wrapping).
-# 2. Force the Trash Button (Column 2) to stay small and square.
 st.markdown("""
 <style>
-    /* Force Sidebar columns to be side-by-side */
+    /* 1. STOP WRAPPING: Force the 2 columns to stay on the same line */
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
         align-items: center !important;
         gap: 5px !important;
     }
     
-    /* Make the Trash Button Small & Square (prevent stretching) */
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button[kind="secondary"] {
-        width: 100% !important; /* The name button takes full space */
-    }
-    
-    /* Target the trash button specifically based on column structure */
+    /* 2. TRASH BUTTON FIX: Force it to be a tiny square */
+    /* We target the button inside the 2nd column of the sidebar */
     [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) button {
-        width: 45px !important; /* FORCE SQUARE SIZE */
-        padding: 0px !important;
-        border: 1px solid #444 !important;
+        width: 42px !important;       /* FORCE EXACT WIDTH */
+        min-width: 42px !important;   /* DO NOT SHRINK */
+        max-width: 42px !important;   /* DO NOT GROW */
+        height: 42px !important;      /* FORCE SQUARE HEIGHT */
+        padding: 0px !important;      /* REMOVE PADDING */
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        border: 1px solid #555 !important;
+    }
+
+    /* 3. NAME BUTTON ADJUSTMENT: Let it take the rest of the space */
+    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) button {
+        width: 100% !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -52,7 +56,7 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Database Offline: {e}")
 
-# --- 3. RESTORE HISTORY (DATABASE) ---
+# --- 3. RESTORE HISTORY ---
 if "history_loaded" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
     st.session_state.active_session_id = "Session 1"
@@ -63,26 +67,23 @@ if "history_loaded" not in st.session_state:
             with st.spinner("🔄 Restoring History..."):
                 data = sheet.get_all_values()
                 if len(data) > 1:
-                    rebuilt_sessions = {}
-                    max_session_num = 1
+                    rebuilt = {}
+                    max_num = 1
                     for row in data[1:]: 
                         if len(row) >= 4:
-                            ts, sess_id, role, content = row[0], row[1], row[2], row[3]
-                            if sess_id not in rebuilt_sessions: 
-                                rebuilt_sessions[sess_id] = []
-                            rebuilt_sessions[sess_id].append({"role": role, "content": content})
+                            ts, sid, role, txt = row[0], row[1], row[2], row[3]
+                            if sid not in rebuilt: rebuilt[sid] = []
+                            rebuilt[sid].append({"role": role, "content": txt})
                             try:
-                                num = int(sess_id.replace("Session ", ""))
-                                if num > max_session_num: max_session_num = num
+                                n = int(sid.replace("Session ", ""))
+                                if n > max_num: max_num = n
                             except: pass
-                    
-                    if rebuilt_sessions:
-                        st.session_state.chat_sessions = rebuilt_sessions
-                        st.session_state.session_counter = max_session_num
-                        st.session_state.active_session_id = list(rebuilt_sessions.keys())[-1]
+                    if rebuilt:
+                        st.session_state.chat_sessions = rebuilt
+                        st.session_state.session_counter = max_num
+                        st.session_state.active_session_id = list(rebuilt.keys())[-1]
             st.session_state.history_loaded = True
-        except:
-            st.session_state.history_loaded = True
+        except: st.session_state.history_loaded = True
 
 # --- 4. HELPER FUNCTIONS ---
 def format_chat_log(session_name, messages):
@@ -100,17 +101,16 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 5. SIDEBAR UI (CUSTOM SESSION MANAGER) ---
+# --- 5. SIDEBAR UI (FIXED) ---
 with st.sidebar:
     st.header("🗄️ Tier 1 History")
     
-    # Counter
-    session_count = len(st.session_state.chat_sessions)
-    st.caption(f"Active Memory: {session_count}/10 Sessions")
+    count = len(st.session_state.chat_sessions)
+    st.caption(f"Active Memory: {count}/10 Sessions")
     
-    # 1. NEW CHAT BUTTON
+    # NEW CHAT
     if st.button("➕ New Chat", use_container_width=True):
-        if session_count >= 10:
+        if count >= 10:
             oldest = list(st.session_state.chat_sessions.keys())[0]
             del st.session_state.chat_sessions[oldest]
             st.toast(f"♻️ Limit reached: Archived '{oldest}'")
@@ -125,45 +125,42 @@ with st.sidebar:
 
     st.divider()
 
-    # 2. SESSION LIST (The Fixed Layout)
-    session_names = list(st.session_state.chat_sessions.keys())
-    
-    if not session_names:
+    # SESSION LIST (The Fixed Layout)
+    names = list(st.session_state.chat_sessions.keys())
+    if not names:
         st.warning("No active chats.")
     else:
-        for session_name in session_names[::-1]:
+        for name in names[::-1]:
             # Create columns: [Name Button] [Trash Button]
-            # Use a tighter ratio for mobile: 0.85 vs 0.15
-            col1, col2 = st.columns([0.85, 0.15])
+            # We use [0.8, 0.2] - The CSS above will force the trash button size
+            col1, col2 = st.columns([0.8, 0.2])
             
-            # Active Highlight Logic
-            label = session_name
+            # Active Highlight
+            label = name
             type_style = "secondary"
-            if session_name == st.session_state.active_session_id:
-                label = f"🟢 {session_name}"
+            if name == st.session_state.active_session_id:
+                label = f"🟢 {name}"
                 type_style = "primary"
             
-            # BUTTON 1: NAME
-            if col1.button(label, key=f"btn_{session_name}", use_container_width=True, type=type_style):
-                st.session_state.active_session_id = session_name
+            if col1.button(label, key=f"btn_{name}", use_container_width=True, type=type_style):
+                st.session_state.active_session_id = name
                 st.rerun()
             
-            # BUTTON 2: TRASH (Now forced to be small by CSS)
-            if col2.button("🗑️", key=f"del_{session_name}", use_container_width=True):
-                del st.session_state.chat_sessions[session_name]
-                if st.session_state.active_session_id == session_name:
+            # The CSS will force this button to be 42px wide square
+            if col2.button("🗑️", key=f"del_{name}", use_container_width=True):
+                del st.session_state.chat_sessions[name]
+                if st.session_state.active_session_id == name:
                     remaining = list(st.session_state.chat_sessions.keys())
                     st.session_state.active_session_id = remaining[-1] if remaining else None
                 st.rerun()
 
     st.divider()
     
-    # 3. DOWNLOAD BUTTON
+    # DOWNLOAD & CLEAR
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Monin_{st.session_state.active_session_id}.txt", use_container_width=True)
     
-    # 4. CLEAR ALL
     if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
         st.session_state.chat_sessions = {"Session 1": []}
         st.session_state.active_session_id = "Session 1"
@@ -178,14 +175,13 @@ with col2:
 
 st.markdown(f"<h3 style='text-align: center;'>Drink Innovation Manager ({st.session_state.active_session_id})</h3>", unsafe_allow_html=True)
 
-# --- 7. TIER 1 TURBO LOADER ---
+# --- 7. TIER 1 LOADER ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded = []
     existing = [f for f in files if os.path.exists(f)]
     if not existing: return []
-    
     for f in existing:
         try:
             ref = genai.upload_file(f)
@@ -193,9 +189,7 @@ def load_knowledge_base():
                 time.sleep(1)
                 ref = genai.get_file(ref.name)
             loaded.append(ref)
-        except Exception as e:
-            print(f"Skipped {f}: {e}")
-            
+        except: pass
     return loaded
 
 with st.spinner("⚡ Tier 1: Loading Knowledge Base Instantly..."):
@@ -205,14 +199,7 @@ HIDDEN_PROMPT = """
 You are the Talented Drink Innovation Manager at Monin Malaysia. 
 CRITICAL: You have access to the Flavor Bible (Split), Case Studies, and Client Data.
 CITATION RULE: You MUST cite your source (e.g., "According to the Flavor Bible...").
-
-Discovery Protocol:
-1. Ask the 3 standard questions (Name/Location, Direction, Category).
-2. Wait for answer. Then ask follow-ups.
-
-Output Rules:
-- Provide ideas in 3 categories: Traditional, Modern Heritage, Crazy.
-- Validate ingredients against the provided knowledge.
+Discovery Protocol: Ask 3 questions (Name, Direction, Category).
 """
 
 try:
@@ -220,7 +207,7 @@ try:
 except:
     model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 8. CHAT DISPLAY & INPUT ---
+# --- 8. CHAT ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
