@@ -129,7 +129,7 @@ with st.sidebar:
     else:
         for name in names[::-1]:
             # FIXED RATIO: Give name 75%, Trash 25% (Better for mobile)
-            col1, col2 = st.columns([0.75, 0.25])
+            col1, col2 = st.columns([0.65, 0.25])
             
             label = name
             type_style = "secondary"
@@ -240,3 +240,4 @@ if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             except Exception as e:
                 st.error(f"Error: {e}")
+
