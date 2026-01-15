@@ -8,49 +8,72 @@ import os
 import time
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="Monin Innovation Lab", layout="wide") # Changed to 'wide' for better sidebar view
+st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
-# Initialize Session State for Multiple Chats
+# Initialize Session State
 if "chat_sessions" not in st.session_state:
-    st.session_state.chat_sessions = {"Session 1": []} # Default first chat
+    st.session_state.chat_sessions = {"Session 1": []}
 if "active_session_id" not in st.session_state:
     st.session_state.active_session_id = "Session 1"
 if "session_counter" not in st.session_state:
     st.session_state.session_counter = 1
 
-# --- SIDEBAR LOGIC (THE NEW HISTORY) ---
+# --- HELPER: CONVERT CHAT TO TEXT FOR DOWNLOAD ---
+def format_chat_log(session_name, messages):
+    log_text = f"--- MONIN INNOVATION LAB: {session_name} ---\n"
+    log_text += f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    
+    for msg in messages:
+        role = "MANAGER (AI)" if msg["role"] == "assistant" else "USER"
+        content = msg["content"]
+        log_text += f"[{role}]:\n{content}\n\n{'-'*40}\n\n"
+    
+    return log_text
+
+# --- SIDEBAR (HISTORY + DOWNLOAD) ---
 with st.sidebar:
     st.header("🗄️ Chat History")
     
-    # 1. New Chat Button
+    # 1. New Chat
     if st.button("➕ New Chat", use_container_width=True):
         st.session_state.session_counter += 1
         new_session_name = f"Session {st.session_state.session_counter}"
         st.session_state.chat_sessions[new_session_name] = []
         st.session_state.active_session_id = new_session_name
-        st.rerun() # Force reload to show new empty chat
+        st.rerun()
 
     st.divider()
 
-    # 2. Session Switcher (Radio Button looks like a menu)
-    # We list sessions in reverse order (newest on top)
+    # 2. Session Switcher
     session_names = list(st.session_state.chat_sessions.keys())[::-1]
-    
     selected_session = st.radio(
         "Select Conversation:",
         session_names,
         index=session_names.index(st.session_state.active_session_id)
     )
-    
-    # Update active session if user clicks a different one
     if selected_session != st.session_state.active_session_id:
         st.session_state.active_session_id = selected_session
         st.rerun()
 
     st.divider()
     
-    # Debug/Clear Button
-    if st.button("🗑️ Clear All History", type="primary"):
+    # 3. DOWNLOAD BUTTON (The New Feature)
+    current_chat = st.session_state.chat_sessions[st.session_state.active_session_id]
+    if current_chat: # Only show if there is chat data
+        chat_log = format_chat_log(st.session_state.active_session_id, current_chat)
+        
+        st.download_button(
+            label="📥 Download Log (.txt)",
+            data=chat_log,
+            file_name=f"Monin_{st.session_state.active_session_id.replace(' ', '_')}.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
+
+    st.divider()
+    
+    # 4. Clear History
+    if st.button("🗑️ Clear All", type="primary"):
         st.session_state.chat_sessions = {"Session 1": []}
         st.session_state.active_session_id = "Session 1"
         st.session_state.session_counter = 1
@@ -81,18 +104,18 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Logger Offline: {e}")
 
-# --- 3. SMART HYBRID LOADER ---
+# --- 3. SMART HYBRID LOADER (Cache + Safety) ---
 @st.cache_resource
 def load_knowledge_base():
     files_to_load = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded_refs = []
-    existing_files = [f for f in files_to_load if os.path.exists(f)]
     
+    existing_files = [f for f in files_to_load if os.path.exists(f)]
     if not existing_files: return []
 
     try:
         for i, filename in enumerate(existing_files):
-            print(f"Uploading {filename}...")
+            # print(f"Uploading {filename}...") # Optional debug print
             ref = genai.upload_file(filename)
             while ref.state.name == "PROCESSING":
                 time.sleep(1)
@@ -127,8 +150,7 @@ try:
 except:
     model = genai.GenerativeModel("gemini-flash-latest", system_instruction=HIDDEN_PROMPT)
 
-# --- 5. CHAT HISTORY DISPLAY ---
-# IMPORTANT: We only display messages from the ACTIVE session
+# --- 5. CHAT DISPLAY ---
 current_messages = st.session_state.chat_sessions[st.session_state.active_session_id]
 
 for message in current_messages:
@@ -154,7 +176,6 @@ with col1:
 # --- 7. INPUT ---
 if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
     
-    # Save User Message to specific session
     st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "user", "content": prompt})
     
     with st.chat_message("user"):
@@ -173,7 +194,6 @@ if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
                 
                 response = model.generate_content(inputs)
                 
-                # Save AI Message to specific session
                 st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": response.text})
                 
                 st.markdown(response.text)
