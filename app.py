@@ -13,21 +13,30 @@ st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
 st.markdown("""
 <style>
-    /* 1. Force Sidebar columns to stay side-by-side on mobile */
+    /* 1. Force Sidebar columns to stay side-by-side */
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
         align-items: center !important;
-        gap: 5px !important;
+        gap: 2px !important; /* MINIMAL GAP TO SAVE SPACE */
     }
     
-    /* 2. TRASH BUTTON: Force it to be small */
+    /* 2. TRASH BUTTON: Fixed Small Size */
     [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) button {
-        width: 40px !important;
-        min-width: 40px !important;
-        max-width: 40px !important;
-        height: 40px !important;
+        width: 35px !important;
+        min-width: 35px !important;
+        max-width: 35px !important;
+        height: 35px !important;
         padding: 0px !important;
         border: 1px solid #444 !important;
+    }
+    
+    /* 3. NAME BUTTON: Allow it to shrink if needed */
+    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) button {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding-left: 5px !important;
+        padding-right: 5px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -92,7 +101,7 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 5. SIDEBAR UI (FIXED WIDTHS) ---
+# --- 5. SIDEBAR UI (MOBILE OPTIMIZED) ---
 with st.sidebar:
     st.header("🗄️ Tier 1 History")
     count = len(st.session_state.chat_sessions)
@@ -119,8 +128,8 @@ with st.sidebar:
         st.warning("No active chats.")
     else:
         for name in names[::-1]:
-            # Use [0.85, 0.15] ratio to give Name button max space
-            col1, col2 = st.columns([0.85, 0.15])
+            # FIXED RATIO: Give name 75%, Trash 25% (Better for mobile)
+            col1, col2 = st.columns([0.75, 0.25])
             
             label = name
             type_style = "secondary"
@@ -128,12 +137,10 @@ with st.sidebar:
                 label = f"🟢 {name}"
                 type_style = "primary"
             
-            # NAME BUTTON: Keeps 'use_container_width=True' (Fills space)
             if col1.button(label, key=f"btn_{name}", use_container_width=True, type=type_style):
                 st.session_state.active_session_id = name
                 st.rerun()
             
-            # TRASH BUTTON: REMOVED 'use_container_width=True' (Stays small)
             if col2.button("🗑️", key=f"del_{name}"):
                 del st.session_state.chat_sessions[name]
                 if st.session_state.active_session_id == name:
