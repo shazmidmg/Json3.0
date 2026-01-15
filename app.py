@@ -42,36 +42,42 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Logger Offline: {e}")
 
-# --- 3. KNOWLEDGE LOADER (SPLIT BIBLES) ---
-# We now load bible1, bible2, studies, and clients
+# --- 3. KNOWLEDGE LOADER (SLOW & STEADY) ---
+# We added a 'time.sleep' to prevent Error 429
 if not st.session_state.knowledge_base:
-    with st.spinner("📚 Loading Knowledge Base (Bible Pt 1 & 2, Studies, CSV)..."):
+    with st.spinner("📚 Loading Knowledge Base (This takes 30s to prevent crashing)..."):
         try:
-            # UPDATED LIST: We look for the split files
             files_to_load = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
             loaded_files = []
             
             for filename in files_to_load:
                 if os.path.exists(filename):
-                    st.toast(f"Uploading {filename} to Brain...")
+                    st.toast(f"Uploading {filename}...")
+                    
+                    # 1. Upload
                     uploaded_ref = genai.upload_file(filename)
                     
-                    # Wait for processing
+                    # 2. Wait for processing
                     while uploaded_ref.state.name == "PROCESSING":
                         time.sleep(1)
                         uploaded_ref = genai.get_file(uploaded_ref.name)
                         
                     loaded_files.append(uploaded_ref)
                     st.toast(f"✅ Active: {filename}")
+                    
+                    # 3. CRITICAL: Take a 10-second breath before the next file
+                    # This prevents the 429 "Resource Exhausted" error
+                    time.sleep(10) 
+                    
                 else:
-                    # Optional warning if a file is missing, but app keeps running
                     print(f"File skipped: {filename}")
             
             st.session_state.knowledge_base = loaded_files
+            st.success("✅ All Knowledge Loaded Successfully!")
         except Exception as e:
             st.error(f"Knowledge Load Error: {e}")
 
-# --- 4. THE PERSONA PROMPT (STRICT CITATION) ---
+# --- 4. THE PERSONA PROMPT ---
 HIDDEN_PROMPT = """
 You are the Talented Drink Innovation Manager at Monin Malaysia. 
 
@@ -94,10 +100,11 @@ Output Rules:
 - Validate ingredients against the provided knowledge.
 """
 
+# We switch to 1.5 Flash as Primary (More stable for large context)
 try:
-    model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
+    model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 except:
-    model = genai.GenerativeModel("gemini-flash-latest", system_instruction=HIDDEN_PROMPT)
+    model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
 
 # --- 5. CHAT HISTORY ---
 for message in st.session_state.messages:
@@ -135,11 +142,9 @@ if prompt := st.chat_input("Start the session..."):
             try:
                 inputs = [prompt]
                 
-                # Add Knowledge Base
                 if st.session_state.knowledge_base:
                     inputs.extend(st.session_state.knowledge_base)
                 
-                # Add User Upload
                 if user_file_content:
                     inputs.append(user_file_content)
                     if user_is_image:
