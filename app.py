@@ -84,7 +84,7 @@ def save_to_sheet(session_id, role, content):
 
 # --- 5. SIDEBAR UI (CLEAN & FUNCTIONAL) ---
 with st.sidebar:
-    st.header("🗄️ Tier 1 History")
+    st.header("🗄️ Session History")
     count = len(st.session_state.chat_sessions)
     st.caption(f"Active Memory: {count}/10 Sessions")
     
@@ -235,3 +235,4 @@ if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             except Exception as e:
                 st.error(f"Error: {e}")
+
