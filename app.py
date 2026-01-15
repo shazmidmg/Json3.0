@@ -8,8 +8,25 @@ import os
 import time
 import pandas as pd
 
-# --- 1. CONFIGURATION ---
+# --- 1. CONFIGURATION & CSS FIX ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
+
+# CSS HACK: Forces the Sidebar columns to stay side-by-side on mobile
+st.markdown("""
+<style>
+    /* 1. Force sidebar columns to not wrap on mobile */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 5px !important;
+    }
+    
+    /* 2. Adjust button padding on mobile so they fit nicely */
+    [data-testid="stSidebar"] button {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # --- 2. AUTHENTICATION & CONNECTION ---
 sheet = None
@@ -48,7 +65,6 @@ if "history_loaded" not in st.session_state:
                                 rebuilt_sessions[sess_id] = []
                             rebuilt_sessions[sess_id].append({"role": role, "content": content})
                             
-                            # Update counter so new chats don't overwrite old ones
                             try:
                                 num = int(sess_id.replace("Session ", ""))
                                 if num > max_session_num: max_session_num = num
@@ -112,7 +128,7 @@ with st.sidebar:
     else:
         # Show newest at top
         for session_name in session_names[::-1]:
-            # Create 2 columns: [ 80% Name Button ] [ 20% Delete Button ]
+            # CSS HACK: Create columns that won't wrap
             col1, col2 = st.columns([0.8, 0.2])
             
             # VISUAL TRICK: Add a "🟢" if it is the currently open session
@@ -120,34 +136,30 @@ with st.sidebar:
             type_style = "secondary"
             if session_name == st.session_state.active_session_id:
                 label = f"🟢 {session_name}"
-                type_style = "primary" # Makes the active button stand out
+                type_style = "primary"
             
             # BUTTON 1: SWITCH SESSION
             if col1.button(label, key=f"btn_{session_name}", use_container_width=True, type=type_style):
                 st.session_state.active_session_id = session_name
                 st.rerun()
             
-            # BUTTON 2: DELETE SESSION (The requested feature)
-            if col2.button("🗑️", key=f"del_{session_name}"):
-                # 1. Delete from memory
+            # BUTTON 2: DELETE SESSION
+            if col2.button("🗑️", key=f"del_{session_name}", use_container_width=True):
                 del st.session_state.chat_sessions[session_name]
-                
-                # 2. If we deleted the one we are looking at, switch to another one
                 if st.session_state.active_session_id == session_name:
                     remaining = list(st.session_state.chat_sessions.keys())
                     st.session_state.active_session_id = remaining[-1] if remaining else None
-                
                 st.rerun()
 
     st.divider()
     
-    # 3. DOWNLOAD BUTTON (Only for the active chat)
+    # 3. DOWNLOAD BUTTON
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Monin_{st.session_state.active_session_id}.txt", use_container_width=True)
     
     # 4. CLEAR ALL (Nuclear Option)
-    if st.button("💣 Erase All Sessions", type="primary", use_container_width=True):
+    if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
         st.session_state.chat_sessions = {"Session 1": []}
         st.session_state.active_session_id = "Session 1"
         st.session_state.session_counter = 1
@@ -169,11 +181,9 @@ def load_knowledge_base():
     existing = [f for f in files if os.path.exists(f)]
     if not existing: return []
     
-    # No Sleep() needed for Tier 1 - We blast the files up!
     for f in existing:
         try:
             ref = genai.upload_file(f)
-            # We still need to wait for Google to process the file (usually 2-3s)
             while ref.state.name == "PROCESSING":
                 time.sleep(1)
                 ref = genai.get_file(ref.name)
@@ -200,7 +210,6 @@ Output Rules:
 - Validate ingredients against the provided knowledge.
 """
 
-# USE GEMINI 2.0 (FASTEST & SMARTEST)
 try:
     model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
 except:
@@ -254,4 +263,3 @@ if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             except Exception as e:
                 st.error(f"Error: {e}")
-
