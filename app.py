@@ -8,43 +8,44 @@ import os
 import time
 import pandas as pd
 
-# --- 1. CONFIGURATION & NUCLEAR GRID CSS ---
+# --- 1. CONFIGURATION & AGGRESSIVE CSS ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
 st.markdown("""
 <style>
-    /* 1. FORCE SIDEBAR TO USE CSS GRID (The Magic Fix) */
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] {
-        display: grid !important;
-        grid-template-columns: 1fr 40px !important; /* Name gets ALL space, Trash gets exactly 40px */
+    /* 1. FORCE ROW LAYOUT ON MOBILE (The Fix) */
+    /* Streamlit tries to stack columns on mobile. This stops it. */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
+        flex-direction: row !important; 
+        flex-wrap: nowrap !important;
+        align-items: center !important;
         gap: 5px !important;
-        align-items: center !important;
     }
     
-    /* 2. REMOVE STREAMLIT'S DEFAULT COLUMN WIDTHS */
-    [data-testid="stSidebar"] [data-testid="column"] {
+    /* 2. COLUMN 1 (NAME): Take all remaining space */
+    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) {
+        flex: 1 !important; /* Grow to fill space */
         width: auto !important;
-        flex: none !important;
-        min-width: 0 !important;
-    }
-    
-    /* 3. TRASH BUTTON STYLE */
-    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) button {
-        width: 40px !important;
-        height: 40px !important;
-        padding: 0px !important;
-        margin: 0px !important;
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
-        border: 1px solid #444 !important;
+        min-width: 0 !important; /* Allow shrinking if text is long */
+        overflow: hidden !important;
     }
 
-    /* 4. NAME BUTTON STYLE (Prevent overflow) */
+    /* 3. COLUMN 2 (TRASH): Fixed Width */
+    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) {
+        flex: 0 0 45px !important; /* Fixed 45px width */
+        width: 45px !important;
+        min-width: 45px !important;
+    }
+    
+    /* 4. BUTTON STYLES inside the columns */
+    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) button {
+        padding: 0px !important;
+        height: 40px !important;
+        border: 1px solid #444 !important;
+    }
+    
+    /* Prevent the name button from overflowing */
     [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) button {
-        width: 100% !important;
-        padding-left: 8px !important;
-        padding-right: 8px !important;
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
@@ -112,7 +113,7 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 5. SIDEBAR UI (GRID LAYOUT) ---
+# --- 5. SIDEBAR UI (FORCED ROW LAYOUT) ---
 with st.sidebar:
     st.header("🗄️ Tier 1 History")
     count = len(st.session_state.chat_sessions)
@@ -139,8 +140,7 @@ with st.sidebar:
         st.warning("No active chats.")
     else:
         for name in names[::-1]:
-            # WE STILL CREATE 2 COLUMNS, BUT CSS NOW CONTROLS THEIR SIZE
-            # The CSS 'grid-template-columns: 1fr 40px' overrides these ratios
+            # WE DECLARE COLUMNS, BUT CSS OVERRIDES THE LAYOUT
             col1, col2 = st.columns([1, 1]) 
             
             label = name
@@ -149,13 +149,13 @@ with st.sidebar:
                 label = f"🟢 {name}"
                 type_style = "primary"
             
-            # NAME BUTTON
+            # Button 1 (Name)
             if col1.button(label, key=f"btn_{name}", use_container_width=True, type=type_style):
                 st.session_state.active_session_id = name
                 st.rerun()
             
-            # TRASH BUTTON
-            if col2.button("🗑️", key=f"del_{name}"):
+            # Button 2 (Trash)
+            if col2.button("🗑️", key=f"del_{name}", use_container_width=True):
                 del st.session_state.chat_sessions[name]
                 if st.session_state.active_session_id == name:
                     remaining = list(st.session_state.chat_sessions.keys())
