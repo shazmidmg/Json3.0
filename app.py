@@ -8,22 +8,31 @@ import os
 import time
 import pandas as pd
 
-# --- 1. CONFIGURATION & CSS FIX ---
+# --- 1. CONFIGURATION & MOBILE CSS FIX ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
-# CSS HACK: Forces the Sidebar columns to stay side-by-side on mobile
+# CSS HACK: 
+# 1. Force sidebar columns to stay side-by-side (No wrapping).
+# 2. Force the Trash Button (Column 2) to stay small and square.
 st.markdown("""
 <style>
-    /* 1. Force sidebar columns to not wrap on mobile */
+    /* Force Sidebar columns to be side-by-side */
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
+        align-items: center !important;
         gap: 5px !important;
     }
     
-    /* 2. Adjust button padding on mobile so they fit nicely */
-    [data-testid="stSidebar"] button {
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
+    /* Make the Trash Button Small & Square (prevent stretching) */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button[kind="secondary"] {
+        width: 100% !important; /* The name button takes full space */
+    }
+    
+    /* Target the trash button specifically based on column structure */
+    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) button {
+        width: 45px !important; /* FORCE SQUARE SIZE */
+        padding: 0px !important;
+        border: 1px solid #444 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -51,20 +60,17 @@ if "history_loaded" not in st.session_state:
     
     if sheet:
         try:
-            # Fast Restore Logic
-            with st.spinner("🔄 Restoring History from Database..."):
+            with st.spinner("🔄 Restoring History..."):
                 data = sheet.get_all_values()
                 if len(data) > 1:
                     rebuilt_sessions = {}
                     max_session_num = 1
-                    # Skip header row [0]
                     for row in data[1:]: 
                         if len(row) >= 4:
                             ts, sess_id, role, content = row[0], row[1], row[2], row[3]
                             if sess_id not in rebuilt_sessions: 
                                 rebuilt_sessions[sess_id] = []
                             rebuilt_sessions[sess_id].append({"role": role, "content": content})
-                            
                             try:
                                 num = int(sess_id.replace("Session ", ""))
                                 if num > max_session_num: max_session_num = num
@@ -88,7 +94,6 @@ def format_chat_log(session_name, messages):
     return log_text
 
 def save_to_sheet(session_id, role, content):
-    """Saves data to Google Sheets in real-time"""
     if sheet:
         try:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -120,30 +125,30 @@ with st.sidebar:
 
     st.divider()
 
-    # 2. SESSION LIST (The "3-Dot" Replacement)
+    # 2. SESSION LIST (The Fixed Layout)
     session_names = list(st.session_state.chat_sessions.keys())
     
     if not session_names:
         st.warning("No active chats.")
     else:
-        # Show newest at top
         for session_name in session_names[::-1]:
-            # CSS HACK: Create columns that won't wrap
-            col1, col2 = st.columns([0.8, 0.2])
+            # Create columns: [Name Button] [Trash Button]
+            # Use a tighter ratio for mobile: 0.85 vs 0.15
+            col1, col2 = st.columns([0.85, 0.15])
             
-            # VISUAL TRICK: Add a "🟢" if it is the currently open session
+            # Active Highlight Logic
             label = session_name
             type_style = "secondary"
             if session_name == st.session_state.active_session_id:
                 label = f"🟢 {session_name}"
                 type_style = "primary"
             
-            # BUTTON 1: SWITCH SESSION
+            # BUTTON 1: NAME
             if col1.button(label, key=f"btn_{session_name}", use_container_width=True, type=type_style):
                 st.session_state.active_session_id = session_name
                 st.rerun()
             
-            # BUTTON 2: DELETE SESSION
+            # BUTTON 2: TRASH (Now forced to be small by CSS)
             if col2.button("🗑️", key=f"del_{session_name}", use_container_width=True):
                 del st.session_state.chat_sessions[session_name]
                 if st.session_state.active_session_id == session_name:
@@ -158,7 +163,7 @@ with st.sidebar:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Monin_{st.session_state.active_session_id}.txt", use_container_width=True)
     
-    # 4. CLEAR ALL (Nuclear Option)
+    # 4. CLEAR ALL
     if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
         st.session_state.chat_sessions = {"Session 1": []}
         st.session_state.active_session_id = "Session 1"
@@ -173,7 +178,7 @@ with col2:
 
 st.markdown(f"<h3 style='text-align: center;'>Drink Innovation Manager ({st.session_state.active_session_id})</h3>", unsafe_allow_html=True)
 
-# --- 7. TIER 1 TURBO LOADER (INSTANT UPLOAD) ---
+# --- 7. TIER 1 TURBO LOADER ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
@@ -234,17 +239,12 @@ with col1:
             else: up_content = up_file.getvalue().decode("utf-8")
 
 if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
-    
-    # 1. Update UI immediately
     st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
-    
-    # 2. Save to Cloud
     save_to_sheet(st.session_state.active_session_id, "user", prompt)
 
-    # 3. Generate Response
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
@@ -255,11 +255,8 @@ if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
                     if up_img: inputs.append("(Analyze image)")
                 
                 response = model.generate_content(inputs)
-                
                 st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": response.text})
                 st.markdown(response.text)
-                
-                # 4. Save Response to Cloud
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             except Exception as e:
                 st.error(f"Error: {e}")
