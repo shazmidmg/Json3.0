@@ -8,40 +8,31 @@ import os
 import time
 import pandas as pd
 
-# --- 1. CONFIGURATION & NUCLEAR CSS FIX ---
+# --- 1. CONFIGURATION & CSS ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
 st.markdown("""
 <style>
-    /* 1. STOP WRAPPING: Force the 2 columns to stay on the same line */
+    /* 1. Force Sidebar columns to stay side-by-side on mobile */
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
         align-items: center !important;
         gap: 5px !important;
     }
     
-    /* 2. TRASH BUTTON FIX: Force it to be a tiny square */
-    /* We target the button inside the 2nd column of the sidebar */
+    /* 2. TRASH BUTTON: Force it to be small */
     [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) button {
-        width: 42px !important;       /* FORCE EXACT WIDTH */
-        min-width: 42px !important;   /* DO NOT SHRINK */
-        max-width: 42px !important;   /* DO NOT GROW */
-        height: 42px !important;      /* FORCE SQUARE HEIGHT */
-        padding: 0px !important;      /* REMOVE PADDING */
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
-        border: 1px solid #555 !important;
-    }
-
-    /* 3. NAME BUTTON ADJUSTMENT: Let it take the rest of the space */
-    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) button {
-        width: 100% !important;
+        width: 40px !important;
+        min-width: 40px !important;
+        max-width: 40px !important;
+        height: 40px !important;
+        padding: 0px !important;
+        border: 1px solid #444 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. AUTHENTICATION & CONNECTION ---
+# --- 2. AUTHENTICATION ---
 sheet = None
 try:
     if "GEMINI_API_KEY" in st.secrets:
@@ -101,14 +92,12 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 5. SIDEBAR UI (FIXED) ---
+# --- 5. SIDEBAR UI (FIXED WIDTHS) ---
 with st.sidebar:
     st.header("🗄️ Tier 1 History")
-    
     count = len(st.session_state.chat_sessions)
     st.caption(f"Active Memory: {count}/10 Sessions")
     
-    # NEW CHAT
     if st.button("➕ New Chat", use_container_width=True):
         if count >= 10:
             oldest = list(st.session_state.chat_sessions.keys())[0]
@@ -125,29 +114,27 @@ with st.sidebar:
 
     st.divider()
 
-    # SESSION LIST (The Fixed Layout)
     names = list(st.session_state.chat_sessions.keys())
     if not names:
         st.warning("No active chats.")
     else:
         for name in names[::-1]:
-            # Create columns: [Name Button] [Trash Button]
-            # We use [0.8, 0.2] - The CSS above will force the trash button size
-            col1, col2 = st.columns([0.8, 0.2])
+            # Use [0.85, 0.15] ratio to give Name button max space
+            col1, col2 = st.columns([0.85, 0.15])
             
-            # Active Highlight
             label = name
             type_style = "secondary"
             if name == st.session_state.active_session_id:
                 label = f"🟢 {name}"
                 type_style = "primary"
             
+            # NAME BUTTON: Keeps 'use_container_width=True' (Fills space)
             if col1.button(label, key=f"btn_{name}", use_container_width=True, type=type_style):
                 st.session_state.active_session_id = name
                 st.rerun()
             
-            # The CSS will force this button to be 42px wide square
-            if col2.button("🗑️", key=f"del_{name}", use_container_width=True):
+            # TRASH BUTTON: REMOVED 'use_container_width=True' (Stays small)
+            if col2.button("🗑️", key=f"del_{name}"):
                 del st.session_state.chat_sessions[name]
                 if st.session_state.active_session_id == name:
                     remaining = list(st.session_state.chat_sessions.keys())
@@ -156,7 +143,6 @@ with st.sidebar:
 
     st.divider()
     
-    # DOWNLOAD & CLEAR
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Monin_{st.session_state.active_session_id}.txt", use_container_width=True)
