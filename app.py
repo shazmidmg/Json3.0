@@ -18,10 +18,14 @@ if "active_session_id" not in st.session_state:
 if "session_counter" not in st.session_state:
     st.session_state.session_counter = 1
 
-# --- HELPER: CONVERT CHAT TO TEXT FOR DOWNLOAD ---
+# --- HELPER: CONVERT CHAT TO TEXT ---
 def format_chat_log(session_name, messages):
     log_text = f"--- MONIN INNOVATION LAB: {session_name} ---\n"
     log_text += f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    
+    if not messages:
+        log_text += "(No messages in this session yet.)"
+        return log_text
     
     for msg in messages:
         role = "MANAGER (AI)" if msg["role"] == "assistant" else "USER"
@@ -30,7 +34,7 @@ def format_chat_log(session_name, messages):
     
     return log_text
 
-# --- SIDEBAR (HISTORY + DOWNLOAD) ---
+# --- SIDEBAR UI ---
 with st.sidebar:
     st.header("🗄️ Chat History")
     
@@ -57,22 +61,22 @@ with st.sidebar:
 
     st.divider()
     
-    # 3. DOWNLOAD BUTTON (The New Feature)
-    current_chat = st.session_state.chat_sessions[st.session_state.active_session_id]
-    if current_chat: # Only show if there is chat data
-        chat_log = format_chat_log(st.session_state.active_session_id, current_chat)
-        
-        st.download_button(
-            label="📥 Download Log (.txt)",
-            data=chat_log,
-            file_name=f"Monin_{st.session_state.active_session_id.replace(' ', '_')}.txt",
-            mime="text/plain",
-            use_container_width=True
-        )
+    # 3. DOWNLOAD BUTTON (FORCE VISIBLE)
+    # We grab the chat data directly here
+    current_chat_data = st.session_state.chat_sessions[st.session_state.active_session_id]
+    log_data = format_chat_log(st.session_state.active_session_id, current_chat_data)
+    
+    st.download_button(
+        label="📥 Download Log (.txt)",
+        data=log_data,
+        file_name=f"Monin_Log_{st.session_state.active_session_id.replace(' ', '_')}.txt",
+        mime="text/plain",
+        use_container_width=True
+    )
 
     st.divider()
     
-    # 4. Clear History
+    # 4. Clear All
     if st.button("🗑️ Clear All", type="primary"):
         st.session_state.chat_sessions = {"Session 1": []}
         st.session_state.active_session_id = "Session 1"
@@ -104,7 +108,7 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Logger Offline: {e}")
 
-# --- 3. SMART HYBRID LOADER (Cache + Safety) ---
+# --- 3. SMART HYBRID LOADER ---
 @st.cache_resource
 def load_knowledge_base():
     files_to_load = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
@@ -115,7 +119,6 @@ def load_knowledge_base():
 
     try:
         for i, filename in enumerate(existing_files):
-            # print(f"Uploading {filename}...") # Optional debug print
             ref = genai.upload_file(filename)
             while ref.state.name == "PROCESSING":
                 time.sleep(1)
