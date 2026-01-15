@@ -11,10 +11,8 @@ import pandas as pd
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
-# (We removed the aggressive CSS because we don't need it anymore!)
 st.markdown("""
 <style>
-    /* Make buttons look cleaner */
     div.stButton > button {
         width: 100%;
         border-radius: 8px;
@@ -82,43 +80,72 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 5. SIDEBAR UI (CLEAN & FUNCTIONAL) ---
+# --- 5. SIDEBAR UI (SAFETY CHECK) ---
 with st.sidebar:
-    st.header("🗄️ Session History")
+    st.header("🗄️ Tier 1 History")
     count = len(st.session_state.chat_sessions)
     st.caption(f"Active Memory: {count}/10 Sessions")
     
-    # NEW CHAT BUTTON
-    if st.button("➕ New Chat", type="primary", use_container_width=True):
-        if count >= 10:
+    # Initialize confirmation state if not exists
+    if "confirm_overwrite" not in st.session_state:
+        st.session_state.confirm_overwrite = False
+
+    # NEW CHAT LOGIC
+    if st.session_state.confirm_overwrite:
+        st.warning("⚠️ Limit Reached (10/10)")
+        st.caption("Creating a new chat will permanently delete the oldest session.")
+        
+        col_conf1, col_conf2 = st.columns(2)
+        if col_conf1.button("✅ Confirm"):
+            # 1. Delete Oldest
             oldest = list(st.session_state.chat_sessions.keys())[0]
             del st.session_state.chat_sessions[oldest]
-            st.toast(f"♻️ Limit reached: Archived '{oldest}'")
             if st.session_state.active_session_id == oldest: 
-                st.session_state.active_session_id = None 
-        
-        st.session_state.session_counter += 1
-        new_name = f"Session {st.session_state.session_counter}"
-        st.session_state.chat_sessions[new_name] = []
-        st.session_state.active_session_id = new_name
-        st.rerun()
+                st.session_state.active_session_id = None
+            
+            # 2. Create New
+            st.session_state.session_counter += 1
+            new_name = f"Session {st.session_state.session_counter}"
+            st.session_state.chat_sessions[new_name] = []
+            st.session_state.active_session_id = new_name
+            
+            # 3. Reset Flag
+            st.session_state.confirm_overwrite = False
+            st.rerun()
+            
+        if col_conf2.button("❌ Cancel"):
+            st.session_state.confirm_overwrite = False
+            st.rerun()
+
+    else:
+        # Normal "New Chat" Button
+        if st.button("➕ New Chat", type="primary", use_container_width=True):
+            if count >= 10:
+                # Trigger Confirmation Mode
+                st.session_state.confirm_overwrite = True
+                st.rerun()
+            else:
+                # Just create it
+                st.session_state.session_counter += 1
+                new_name = f"Session {st.session_state.session_counter}"
+                st.session_state.chat_sessions[new_name] = []
+                st.session_state.active_session_id = new_name
+                st.rerun()
 
     st.divider()
 
-    # SESSION LIST (Vertical List - No Complex Columns)
+    # SESSION LIST
     names = list(st.session_state.chat_sessions.keys())
     if not names:
         st.warning("No active chats.")
     else:
         for name in names[::-1]:
-            # Highlight active session
             label = name
             type_style = "secondary"
             if name == st.session_state.active_session_id:
                 label = f"🟢 {name}"
-                type_style = "primary" # Make it visually pop
+                type_style = "primary"
             
-            # Simple Button per Session
             if st.button(label, key=f"btn_{name}", use_container_width=True, type=type_style):
                 st.session_state.active_session_id = name
                 st.rerun()
@@ -129,27 +156,20 @@ with st.sidebar:
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         
-        # 1. Download
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Monin_{st.session_state.active_session_id}.txt", use_container_width=True)
         
-        # 2. DELETE CURRENT (The Requested Feature)
         if st.button("🗑️ Delete Current Session", use_container_width=True):
-            # Delete the specific session
             del st.session_state.chat_sessions[st.session_state.active_session_id]
-            
-            # Pick a new active session
             remaining = list(st.session_state.chat_sessions.keys())
             if remaining:
                 st.session_state.active_session_id = remaining[-1]
             else:
-                # If we deleted the last one, reset to blank
                 st.session_state.chat_sessions = {"Session 1": []}
                 st.session_state.active_session_id = "Session 1"
                 st.session_state.session_counter = 1
             st.rerun()
     
-    # 3. WIPE ALL
-    if st.button("💣 Delete All Sessions", type="primary", use_container_width=True):
+    if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
         st.session_state.chat_sessions = {"Session 1": []}
         st.session_state.active_session_id = "Session 1"
         st.session_state.session_counter = 1
@@ -235,5 +255,3 @@ if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             except Exception as e:
                 st.error(f"Error: {e}")
-
-
