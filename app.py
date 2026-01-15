@@ -42,12 +42,13 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Logger Offline: {e}")
 
-# --- 3. KNOWLEDGE LOADER (The Persistent PDFs) ---
-# This loads the Flavor Bible/Client Data into the brain ONCE.
+# --- 3. KNOWLEDGE LOADER (SPLIT BIBLES) ---
+# We now load bible1, bible2, studies, and clients
 if not st.session_state.knowledge_base:
-    with st.spinner("📚 Loading Knowledge Base (Bible, Studies, CSV)..."):
+    with st.spinner("📚 Loading Knowledge Base (Bible Pt 1 & 2, Studies, CSV)..."):
         try:
-            files_to_load = ["bible.pdf", "studies.pdf", "clients.csv"]
+            # UPDATED LIST: We look for the split files
+            files_to_load = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
             loaded_files = []
             
             for filename in files_to_load:
@@ -62,35 +63,35 @@ if not st.session_state.knowledge_base:
                         
                     loaded_files.append(uploaded_ref)
                     st.toast(f"✅ Active: {filename}")
+                else:
+                    # Optional warning if a file is missing, but app keeps running
+                    print(f"File skipped: {filename}")
             
             st.session_state.knowledge_base = loaded_files
         except Exception as e:
             st.error(f"Knowledge Load Error: {e}")
 
-# --- 4. THE PERSONA PROMPT ---
+# --- 4. THE PERSONA PROMPT (STRICT CITATION) ---
 HIDDEN_PROMPT = """
 You are the Talented Drink Innovation Manager at Monin Malaysia. 
-Your Goal: Craft innovative drink ideas that are commercially suitable and make customers fall in love.
 
-KNOWLEDGE BASE INSTRUCTION:
-You have access to 3 key documents (Bible, Studies, Client Data). 
-ALWAYS refer to these documents for flavor pairing logic and trends.
+CRITICAL KNOWLEDGE INSTRUCTION:
+You have access to:
+1. 'bible1.pdf' & 'bible2.pdf' (The Flavor Bible Split) - Use these for flavor pairing.
+2. 'studies.pdf' (Case Studies) - Use for trends.
+3. 'clients.csv' (Client Data) - Use for segmentation.
+
+CITATION RULE:
+When you suggest a pairing or trend, you MUST mention which document it came from.
+Example: "Based on the Flavor Bible (Part 1)..." or "According to client data..."
 
 Discovery Protocol:
-1. Start by asking the user:
-   - "What is the name of the cafe/business and location?"
-   - "What is the direction/goal?"
-   - "Which category best describes it?"
-
-2. Follow up (Max 3 questions):
-   - Current flavors?
-   - New concept/occasion?
-   - Operational capacity?
+1. Ask the 3 standard questions (Name/Location, Direction, Category).
+2. Then ask follow-ups (Current flavors, operational capacity).
 
 Output Rules:
 - Provide ideas in 3 categories: Traditional, Modern Heritage, Crazy.
 - Validate ingredients against the provided knowledge.
-- If finalized, provide Recipe, Preparation, and Garnish.
 """
 
 try:
@@ -103,8 +104,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- 6. [RESTORED] USER ATTACHMENT BUTTON ---
-# This allows YOU to upload a new image/menu during the chat
+# --- 6. USER ATTACHMENT BUTTON ---
 col1, col2 = st.columns([0.15, 0.85]) 
 with col1:
     with st.popover("📎 Attach", use_container_width=True):
@@ -133,18 +133,17 @@ if prompt := st.chat_input("Start the session..."):
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
-                # 1. Start with the text prompt
                 inputs = [prompt]
                 
-                # 2. Add the Persistent Knowledge (PDFs)
+                # Add Knowledge Base
                 if st.session_state.knowledge_base:
                     inputs.extend(st.session_state.knowledge_base)
                 
-                # 3. Add the User's New Upload (if any)
+                # Add User Upload
                 if user_file_content:
                     inputs.append(user_file_content)
                     if user_is_image:
-                        inputs.append("(Analyze this specific user-uploaded image in context of the request)")
+                        inputs.append("(Analyze this specific user-uploaded image)")
                 
                 response = model.generate_content(inputs)
                 ai_text = response.text
