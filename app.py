@@ -8,63 +8,16 @@ import os
 import time
 import pandas as pd
 
-# --- 1. CONFIGURATION & MOBILE-PROOF CSS ---
+# --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
+# (We removed the aggressive CSS because we don't need it anymore!)
 st.markdown("""
 <style>
-    /* --- 1. THE MOBILE OVERRIDE (Crucial Fix) --- */
-    /* This forces the sidebar columns to stay in a row even on tiny screens */
-    @media (max-width: 999px) {
-        [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-        }
-    }
-
-    /* --- 2. LAYOUT CONTROL --- */
-    /* Force the container to hold the items side-by-side */
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
-        align-items: center !important;
-        gap: 0px !important; /* Zero gap to save space */
-    }
-    
-    /* --- 3. COLUMN 1 (NAME) --- */
-    /* Let it take all available space, but allow shrinking */
-    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) {
-        flex: 1 1 auto !important;
-        width: auto !important;
-        min-width: 0px !important;
-        overflow: hidden !important;
-    }
-    
-    /* --- 4. COLUMN 2 (TRASH) --- */
-    /* Force it to be exactly 40px wide, never grow, never shrink */
-    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) {
-        flex: 0 0 40px !important;
-        width: 40px !important;
-        min-width: 40px !important;
-        max-width: 40px !important;
-    }
-
-    /* --- 5. BUTTON STYLING --- */
-    /* Name Button: Cut off text if too long */
-    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) button {
-        width: 100% !important;
-        padding: 0.25rem 0.5rem !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-    }
-
-    /* Trash Button: Center the icon */
-    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) button {
-        width: 100% !important;
-        padding: 0px !important;
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
-        border: 1px solid #444 !important;
+    /* Make buttons look cleaner */
+    div.stButton > button {
+        width: 100%;
+        border-radius: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -129,13 +82,14 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 5. SIDEBAR UI (MOBILE OPTIMIZED) ---
+# --- 5. SIDEBAR UI (CLEAN & FUNCTIONAL) ---
 with st.sidebar:
     st.header("🗄️ Tier 1 History")
     count = len(st.session_state.chat_sessions)
     st.caption(f"Active Memory: {count}/10 Sessions")
     
-    if st.button("➕ New Chat", use_container_width=True):
+    # NEW CHAT BUTTON
+    if st.button("➕ New Chat", type="primary", use_container_width=True):
         if count >= 10:
             oldest = list(st.session_state.chat_sessions.keys())[0]
             del st.session_state.chat_sessions[oldest]
@@ -151,40 +105,50 @@ with st.sidebar:
 
     st.divider()
 
+    # SESSION LIST (Vertical List - No Complex Columns)
     names = list(st.session_state.chat_sessions.keys())
     if not names:
         st.warning("No active chats.")
     else:
         for name in names[::-1]:
-            # PYTHON COLUMNS: The numbers here matter less now because CSS overrides them,
-            # but we keep a ratio to help the desktop view.
-            col1, col2 = st.columns([0.8, 0.2]) 
-            
+            # Highlight active session
             label = name
             type_style = "secondary"
             if name == st.session_state.active_session_id:
                 label = f"🟢 {name}"
-                type_style = "primary"
+                type_style = "primary" # Make it visually pop
             
-            # Button 1 (Name)
-            if col1.button(label, key=f"btn_{name}", use_container_width=True, type=type_style):
+            # Simple Button per Session
+            if st.button(label, key=f"btn_{name}", use_container_width=True, type=type_style):
                 st.session_state.active_session_id = name
-                st.rerun()
-            
-            # Button 2 (Trash)
-            if col2.button("🗑️", key=f"del_{name}", use_container_width=True):
-                del st.session_state.chat_sessions[name]
-                if st.session_state.active_session_id == name:
-                    remaining = list(st.session_state.chat_sessions.keys())
-                    st.session_state.active_session_id = remaining[-1] if remaining else None
                 st.rerun()
 
     st.divider()
     
+    # CONTROLS
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
+        
+        # 1. Download
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Monin_{st.session_state.active_session_id}.txt", use_container_width=True)
+        
+        # 2. DELETE CURRENT (The Requested Feature)
+        if st.button("🗑️ Delete Current Session", use_container_width=True):
+            # Delete the specific session
+            del st.session_state.chat_sessions[st.session_state.active_session_id]
+            
+            # Pick a new active session
+            remaining = list(st.session_state.chat_sessions.keys())
+            if remaining:
+                st.session_state.active_session_id = remaining[-1]
+            else:
+                # If we deleted the last one, reset to blank
+                st.session_state.chat_sessions = {"Session 1": []}
+                st.session_state.active_session_id = "Session 1"
+                st.session_state.session_counter = 1
+            st.rerun()
     
+    # 3. WIPE ALL
     if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
         st.session_state.chat_sessions = {"Session 1": []}
         st.session_state.active_session_id = "Session 1"
