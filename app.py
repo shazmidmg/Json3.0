@@ -1,3 +1,84 @@
+import streamlit as st
+import google.generativeai as genai
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
+from PIL import Image
+import os
+import time
+import pandas as pd
+
+# --- 1. CONFIGURATION ---
+st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
+
+# --- 2. AUTHENTICATION & CONNECTION ---
+sheet = None
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    if "gcp_service_account" in st.secrets:
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        if "private_key" in creds_dict:
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+            client = gspread.authorize(creds)
+            sheet = client.open("JSON 3.0 Logs").sheet1
+except Exception as e:
+    st.warning(f"⚠️ Database Offline: {e}")
+
+# --- 3. RESTORE HISTORY (DATABASE) ---
+if "history_loaded" not in st.session_state:
+    st.session_state.chat_sessions = {"Session 1": []}
+    st.session_state.active_session_id = "Session 1"
+    st.session_state.session_counter = 1
+    
+    if sheet:
+        try:
+            # Fast Restore Logic
+            with st.spinner("🔄 Restoring History from Database..."):
+                data = sheet.get_all_values()
+                if len(data) > 1:
+                    rebuilt_sessions = {}
+                    max_session_num = 1
+                    # Skip header row [0]
+                    for row in data[1:]: 
+                        if len(row) >= 4:
+                            ts, sess_id, role, content = row[0], row[1], row[2], row[3]
+                            if sess_id not in rebuilt_sessions: 
+                                rebuilt_sessions[sess_id] = []
+                            rebuilt_sessions[sess_id].append({"role": role, "content": content})
+                            
+                            # Update counter so new chats don't overwrite old ones
+                            try:
+                                num = int(sess_id.replace("Session ", ""))
+                                if num > max_session_num: max_session_num = num
+                            except: pass
+                    
+                    if rebuilt_sessions:
+                        st.session_state.chat_sessions = rebuilt_sessions
+                        st.session_state.session_counter = max_session_num
+                        st.session_state.active_session_id = list(rebuilt_sessions.keys())[-1]
+            st.session_state.history_loaded = True
+        except:
+            st.session_state.history_loaded = True
+
+# --- 4. HELPER FUNCTIONS ---
+def format_chat_log(session_name, messages):
+    log_text = f"--- MONIN LOG: {session_name} ---\nDate: {datetime.now()}\n\n"
+    if not messages: return log_text + "(Empty)"
+    for msg in messages:
+        role = "MANAGER" if msg["role"] == "assistant" else "USER"
+        log_text += f"[{role}]:\n{msg['content']}\n\n{'-'*40}\n\n"
+    return log_text
+
+def save_to_sheet(session_id, role, content):
+    """Saves data to Google Sheets in real-time"""
+    if sheet:
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            sheet.append_row([timestamp, session_id, role, content])
+        except: pass
+
 # --- 5. SIDEBAR UI (CUSTOM SESSION MANAGER) ---
 with st.sidebar:
     st.header("🗄️ Tier 1 History")
@@ -24,7 +105,6 @@ with st.sidebar:
     st.divider()
 
     # 2. SESSION LIST (The "3-Dot" Replacement)
-    # We loop through sessions and create a row for each
     session_names = list(st.session_state.chat_sessions.keys())
     
     if not session_names:
@@ -72,3 +152,105 @@ with st.sidebar:
         st.session_state.active_session_id = "Session 1"
         st.session_state.session_counter = 1
         st.rerun()
+
+# --- 6. MAIN UI ---
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    try: st.image("logo.png", use_container_width=True) 
+    except: st.header("🍹 Monin Lab")
+
+st.markdown(f"<h3 style='text-align: center;'>Drink Innovation Manager ({st.session_state.active_session_id})</h3>", unsafe_allow_html=True)
+
+# --- 7. TIER 1 TURBO LOADER (INSTANT UPLOAD) ---
+@st.cache_resource
+def load_knowledge_base():
+    files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
+    loaded = []
+    existing = [f for f in files if os.path.exists(f)]
+    if not existing: return []
+    
+    # No Sleep() needed for Tier 1 - We blast the files up!
+    for f in existing:
+        try:
+            ref = genai.upload_file(f)
+            # We still need to wait for Google to process the file (usually 2-3s)
+            while ref.state.name == "PROCESSING":
+                time.sleep(1)
+                ref = genai.get_file(ref.name)
+            loaded.append(ref)
+        except Exception as e:
+            print(f"Skipped {f}: {e}")
+            
+    return loaded
+
+with st.spinner("⚡ Tier 1: Loading Knowledge Base Instantly..."):
+    knowledge_base = load_knowledge_base()
+
+HIDDEN_PROMPT = """
+You are the Talented Drink Innovation Manager at Monin Malaysia. 
+CRITICAL: You have access to the Flavor Bible (Split), Case Studies, and Client Data.
+CITATION RULE: You MUST cite your source (e.g., "According to the Flavor Bible...").
+
+Discovery Protocol:
+1. Ask the 3 standard questions (Name/Location, Direction, Category).
+2. Wait for answer. Then ask follow-ups.
+
+Output Rules:
+- Provide ideas in 3 categories: Traditional, Modern Heritage, Crazy.
+- Validate ingredients against the provided knowledge.
+"""
+
+# USE GEMINI 2.0 (FASTEST & SMARTEST)
+try:
+    model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
+except:
+    model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
+
+# --- 8. CHAT DISPLAY & INPUT ---
+curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
+for m in curr_msgs:
+    with st.chat_message(m["role"]): st.markdown(m["content"])
+
+col1, col2 = st.columns([0.15, 0.85]) 
+with col1:
+    with st.popover("📎 Attach", use_container_width=True):
+        up_file = st.file_uploader("Upload", type=["png", "jpg", "csv", "txt"])
+        up_content, up_img = None, False
+        if up_file:
+            st.caption("✅ Ready")
+            if "image" in up_file.type:
+                st.image(up_file, width=150)
+                up_content = Image.open(up_file)
+                up_img = True
+            else: up_content = up_file.getvalue().decode("utf-8")
+
+if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
+    
+    # 1. Update UI immediately
+    st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+        if up_file: st.markdown(f"*(Attached: {up_file.name})*")
+    
+    # 2. Save to Cloud
+    save_to_sheet(st.session_state.active_session_id, "user", prompt)
+
+    # 3. Generate Response
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            try:
+                inputs = [prompt]
+                if knowledge_base: inputs.extend(knowledge_base)
+                if up_content:
+                    inputs.append(up_content)
+                    if up_img: inputs.append("(Analyze image)")
+                
+                response = model.generate_content(inputs)
+                
+                st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": response.text})
+                st.markdown(response.text)
+                
+                # 4. Save Response to Cloud
+                save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
+            except Exception as e:
+                st.error(f"Error: {e}")
