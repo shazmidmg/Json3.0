@@ -8,47 +8,63 @@ import os
 import time
 import pandas as pd
 
-# --- 1. CONFIGURATION & AGGRESSIVE CSS ---
+# --- 1. CONFIGURATION & MOBILE-PROOF CSS ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
 st.markdown("""
 <style>
-    /* 1. FORCE ROW LAYOUT ON MOBILE (The Fix) */
-    /* Streamlit tries to stack columns on mobile. This stops it. */
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
-        flex-direction: row !important; 
-        flex-wrap: nowrap !important;
-        align-items: center !important;
-        gap: 5px !important;
-    }
-    
-    /* 2. COLUMN 1 (NAME): Take all remaining space */
-    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) {
-        flex: 1 !important; /* Grow to fill space */
-        width: auto !important;
-        min-width: 0 !important; /* Allow shrinking if text is long */
-        overflow: hidden !important;
+    /* --- 1. THE MOBILE OVERRIDE (Crucial Fix) --- */
+    /* This forces the sidebar columns to stay in a row even on tiny screens */
+    @media (max-width: 999px) {
+        [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+        }
     }
 
-    /* 3. COLUMN 2 (TRASH): Fixed Width */
+    /* --- 2. LAYOUT CONTROL --- */
+    /* Force the container to hold the items side-by-side */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
+        align-items: center !important;
+        gap: 0px !important; /* Zero gap to save space */
+    }
+    
+    /* --- 3. COLUMN 1 (NAME) --- */
+    /* Let it take all available space, but allow shrinking */
+    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) {
+        flex: 1 1 auto !important;
+        width: auto !important;
+        min-width: 0px !important;
+        overflow: hidden !important;
+    }
+    
+    /* --- 4. COLUMN 2 (TRASH) --- */
+    /* Force it to be exactly 40px wide, never grow, never shrink */
     [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) {
-        flex: 0 0 45px !important; /* Fixed 45px width */
-        width: 45px !important;
-        min-width: 45px !important;
+        flex: 0 0 40px !important;
+        width: 40px !important;
+        min-width: 40px !important;
+        max-width: 40px !important;
     }
-    
-    /* 4. BUTTON STYLES inside the columns */
-    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) button {
-        padding: 0px !important;
-        height: 40px !important;
-        border: 1px solid #444 !important;
-    }
-    
-    /* Prevent the name button from overflowing */
+
+    /* --- 5. BUTTON STYLING --- */
+    /* Name Button: Cut off text if too long */
     [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(1) button {
+        width: 100% !important;
+        padding: 0.25rem 0.5rem !important;
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
+    }
+
+    /* Trash Button: Center the icon */
+    [data-testid="stSidebar"] [data-testid="column"]:nth-of-type(2) button {
+        width: 100% !important;
+        padding: 0px !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        border: 1px solid #444 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -113,7 +129,7 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 5. SIDEBAR UI (FORCED ROW LAYOUT) ---
+# --- 5. SIDEBAR UI (MOBILE OPTIMIZED) ---
 with st.sidebar:
     st.header("🗄️ Tier 1 History")
     count = len(st.session_state.chat_sessions)
@@ -140,8 +156,9 @@ with st.sidebar:
         st.warning("No active chats.")
     else:
         for name in names[::-1]:
-            # WE DECLARE COLUMNS, BUT CSS OVERRIDES THE LAYOUT
-            col1, col2 = st.columns([1, 1]) 
+            # PYTHON COLUMNS: The numbers here matter less now because CSS overrides them,
+            # but we keep a ratio to help the desktop view.
+            col1, col2 = st.columns([0.8, 0.2]) 
             
             label = name
             type_style = "secondary"
