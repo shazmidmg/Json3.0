@@ -147,7 +147,7 @@ with st.sidebar:
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Monin_{st.session_state.active_session_id}.txt", use_container_width=True)
     
     # 4. CLEAR ALL (Nuclear Option)
-    if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
+    if st.button("💣 Erase All Sessions", type="primary", use_container_width=True):
         st.session_state.chat_sessions = {"Session 1": []}
         st.session_state.active_session_id = "Session 1"
         st.session_state.session_counter = 1
@@ -254,3 +254,4 @@ if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             except Exception as e:
                 st.error(f"Error: {e}")
+
