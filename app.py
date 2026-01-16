@@ -8,6 +8,9 @@ import os
 import time
 import pandas as pd
 
+# --- 1. CONFIGURATION ---
+st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
+
 # --- HIDE STREAMLIT BRANDING ---
 hide_st_style = """
             <style>
@@ -17,9 +20,6 @@ hide_st_style = """
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
-
-# --- 1. CONFIGURATION ---
-st.set_page_config(page_title="Monin Innovation Lab", layout="wide")
 
 st.markdown("""
 <style>
@@ -292,4 +292,5 @@ if prompt := st.chat_input(f"Type here..."):
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             except Exception as e:
                 st.error(f"Error: {e}")
+
 
