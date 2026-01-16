@@ -1,27 +1,27 @@
+import streamlit as st
+import google.generativeai as genai
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
+from PIL import Image
+import os
+import time
+import pandas as pd
+
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide", initial_sidebar_state="expanded")
 
 # --- HIDE STREAMLIT BRANDING (Fixed) ---
-# We removed 'header {visibility: hidden;}' so you can see the sidebar arrow again!
+# We keep the header visible so you can see the sidebar arrow!
 hide_st_style = """
 <style>
-    #MainMenu {visibility: hidden;} /* Hides the 3-dot menu */
-    footer {visibility: hidden;}    /* Hides 'Made with Streamlit' */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
 </style>
 """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # --- CUSTOM BUTTON STYLING ---
-st.markdown("""
-<style>
-    div.stButton > button {
-        width: 100%;
-        border-radius: 8px;
-        text-align: left !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 st.markdown("""
 <style>
     div.stButton > button {
@@ -293,6 +293,3 @@ if prompt := st.chat_input(f"Type here..."):
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             except Exception as e:
                 st.error(f"Error: {e}")
-
-
-
