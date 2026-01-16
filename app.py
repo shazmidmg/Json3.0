@@ -16,6 +16,7 @@ st.markdown("""
     div.stButton > button {
         width: 100%;
         border-radius: 8px;
+        text-align: left !important; /* Align titles to the left */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -35,9 +36,10 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Database Offline: {e}")
 
-# --- 3. RESTORE HISTORY ---
+# --- 3. RESTORE HISTORY & GENERATE TITLES ---
 if "history_loaded" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
+    st.session_state.session_titles = {"Session 1": "New Chat"} # Store titles here
     st.session_state.active_session_id = "Session 1"
     st.session_state.session_counter = 1
     
@@ -47,18 +49,32 @@ if "history_loaded" not in st.session_state:
                 data = sheet.get_all_values()
                 if len(data) > 1:
                     rebuilt = {}
+                    titles = {} # Temp dict for titles
                     max_num = 1
+                    
                     for row in data[1:]: 
                         if len(row) >= 4:
                             ts, sid, role, txt = row[0], row[1], row[2], row[3]
-                            if sid not in rebuilt: rebuilt[sid] = []
+                            if sid not in rebuilt: 
+                                rebuilt[sid] = []
+                                # DEFAULT TITLE: First 30 chars of first user message
+                                if role == "user":
+                                    titles[sid] = (txt[:25] + "..") if len(txt) > 25 else txt
+                            
                             rebuilt[sid].append({"role": role, "content": txt})
+                            
+                            # Keep updating title if we found a better "User" message early on
+                            if role == "user" and titles.get(sid) == "New Chat":
+                                titles[sid] = (txt[:25] + "..") if len(txt) > 25 else txt
+
                             try:
                                 n = int(sid.replace("Session ", ""))
                                 if n > max_num: max_num = n
                             except: pass
+                    
                     if rebuilt:
                         st.session_state.chat_sessions = rebuilt
+                        st.session_state.session_titles = titles
                         st.session_state.session_counter = max_num
                         st.session_state.active_session_id = list(rebuilt.keys())[-1]
             st.session_state.history_loaded = True
@@ -80,73 +96,76 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 5. SIDEBAR UI (SAFETY CHECK) ---
+def get_smart_title(user_text):
+    """Generates a short, punchy title using Gemini Flash"""
+    try:
+        # We use a separate cheap call just for the title
+        title_model = genai.GenerativeModel("gemini-1.5-flash")
+        response = title_model.generate_content(f"Summarize this request in 3-5 words for a chat title. No quotes. Text: {user_text}")
+        return response.text.strip()
+    except:
+        return (user_text[:25] + "..") if len(user_text) > 25 else user_text
+
+# --- 5. SIDEBAR UI ---
 with st.sidebar:
-    st.header("🗄️ Sessions History")
+    st.header("🗄️ Tier 1 History")
     count = len(st.session_state.chat_sessions)
     st.caption(f"Active Memory: {count}/10 Sessions")
     
-    # Initialize confirmation state if not exists
     if "confirm_overwrite" not in st.session_state:
         st.session_state.confirm_overwrite = False
 
-    # NEW CHAT LOGIC
+    # NEW CHAT
     if st.session_state.confirm_overwrite:
         st.warning("⚠️ Limit Reached (10/10)")
-        st.caption("Creating a new chat will permanently delete the oldest session.")
-        
         col_conf1, col_conf2 = st.columns(2)
         if col_conf1.button("✅ Confirm"):
-            # 1. Delete Oldest
             oldest = list(st.session_state.chat_sessions.keys())[0]
             del st.session_state.chat_sessions[oldest]
-            if st.session_state.active_session_id == oldest: 
-                st.session_state.active_session_id = None
+            if st.session_state.active_session_id == oldest: st.session_state.active_session_id = None
             
-            # 2. Create New
             st.session_state.session_counter += 1
             new_name = f"Session {st.session_state.session_counter}"
             st.session_state.chat_sessions[new_name] = []
+            st.session_state.session_titles[new_name] = "New Chat" # Default title
             st.session_state.active_session_id = new_name
-            
-            # 3. Reset Flag
             st.session_state.confirm_overwrite = False
             st.rerun()
-            
         if col_conf2.button("❌ Cancel"):
             st.session_state.confirm_overwrite = False
             st.rerun()
-
     else:
-        # Normal "New Chat" Button
         if st.button("➕ New Chat", type="primary", use_container_width=True):
             if count >= 10:
-                # Trigger Confirmation Mode
                 st.session_state.confirm_overwrite = True
                 st.rerun()
             else:
-                # Just create it
                 st.session_state.session_counter += 1
                 new_name = f"Session {st.session_state.session_counter}"
                 st.session_state.chat_sessions[new_name] = []
+                st.session_state.session_titles[new_name] = "New Chat"
                 st.session_state.active_session_id = new_name
                 st.rerun()
 
     st.divider()
 
-    # SESSION LIST
+    # SMART SESSION LIST
     names = list(st.session_state.chat_sessions.keys())
     if not names:
         st.warning("No active chats.")
     else:
         for name in names[::-1]:
-            label = name
-            type_style = "secondary"
-            if name == st.session_state.active_session_id:
-                label = f"🟢 {name}"
-                type_style = "primary"
+            # Get the custom title, fallback to ID if missing
+            display_title = st.session_state.session_titles.get(name, name)
             
-            if st.button(label, key=f"btn_{name}", use_container_width=True, type=type_style):
+            # Highlight active
+            type_style = "secondary"
+            prefix = "📄 "
+            if name == st.session_state.active_session_id:
+                type_style = "primary"
+                prefix = "🟢 "
+            
+            if st.button(f"{prefix}{display_title}", key=f"btn_{name}", use_container_width=True, type=type_style):
                 st.session_state.active_session_id = name
                 st.rerun()
 
@@ -155,22 +174,21 @@ with st.sidebar:
     # CONTROLS
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
-        
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Monin_{st.session_state.active_session_id}.txt", use_container_width=True)
         
         if st.button("🗑️ Delete Current Session", use_container_width=True):
             del st.session_state.chat_sessions[st.session_state.active_session_id]
             remaining = list(st.session_state.chat_sessions.keys())
-            if remaining:
-                st.session_state.active_session_id = remaining[-1]
-            else:
-                st.session_state.chat_sessions = {"Session 1": []}
-                st.session_state.active_session_id = "Session 1"
-                st.session_state.session_counter = 1
+            st.session_state.active_session_id = remaining[-1] if remaining else None
+            if not remaining: 
+                 st.session_state.chat_sessions = {"Session 1": []}
+                 st.session_state.session_titles = {"Session 1": "New Chat"}
+                 st.session_state.active_session_id = "Session 1"
             st.rerun()
     
-    if st.button("💣 Delete All Sessions", type="primary", use_container_width=True):
+    if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
         st.session_state.chat_sessions = {"Session 1": []}
+        st.session_state.session_titles = {"Session 1": "New Chat"}
         st.session_state.active_session_id = "Session 1"
         st.session_state.session_counter = 1
         st.rerun()
@@ -181,7 +199,7 @@ with col2:
     try: st.image("logo.png", use_container_width=True) 
     except: st.header("🍹 Monin Lab")
 
-st.markdown(f"<h3 style='text-align: center;'>Drink Innovation Manager ({st.session_state.active_session_id})</h3>", unsafe_allow_html=True)
+st.markdown(f"<h3 style='text-align: center;'>Drink Innovation Manager</h3>", unsafe_allow_html=True) # Removed ID from header for cleaner look
 
 # --- 7. TIER 1 LOADER ---
 @st.cache_resource
@@ -197,10 +215,11 @@ def load_knowledge_base():
                 time.sleep(1)
                 ref = genai.get_file(ref.name)
             loaded.append(ref)
-        except: pass
+            time.sleep(2)
+        except: time.sleep(5)
     return loaded
 
-with st.spinner("⚡ Tier 1: Loading Knowledge Base Instantly..."):
+with st.spinner("⚡ Tier 1: Loading Knowledge Base..."):
     knowledge_base = load_knowledge_base()
 
 HIDDEN_PROMPT = """
@@ -211,9 +230,10 @@ Discovery Protocol: Ask 3 questions (Name, Direction, Category).
 """
 
 try:
-    model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
+    model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=HIDDEN_PROMPT)
 except:
-    model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
+    try: model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
+    except: model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
 # --- 8. CHAT ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
@@ -233,13 +253,24 @@ with col1:
                 up_img = True
             else: up_content = up_file.getvalue().decode("utf-8")
 
-if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
+if prompt := st.chat_input(f"Chatting in {st.session_state.active_session_id}..."):
+    
+    # 1. Update UI
     st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
     save_to_sheet(st.session_state.active_session_id, "user", prompt)
 
+    # 2. GENERATE SMART TITLE (First Message Only)
+    # Check if this is the first user message in this session
+    current_chat_len = len(st.session_state.chat_sessions[st.session_state.active_session_id])
+    if current_chat_len <= 2: # User msg just added
+        new_title = get_smart_title(prompt)
+        st.session_state.session_titles[st.session_state.active_session_id] = new_title
+        st.rerun() # Refresh sidebar to show new title immediately
+
+    # 3. Generate Response
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
@@ -255,5 +286,3 @@ if prompt := st.chat_input(f"Message {st.session_state.active_session_id}..."):
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             except Exception as e:
                 st.error(f"Error: {e}")
-
-
