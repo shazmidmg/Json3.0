@@ -193,6 +193,11 @@ with st.sidebar:
                  st.session_state.session_counter = 1
             st.rerun()
     
+    # MANUAL REFRESH BUTTON (Debug)
+    if st.button("🔄 Refresh Memory", use_container_width=True):
+        st.cache_resource.clear()
+        st.rerun()
+
     if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
         st.session_state.chat_sessions = {"Session 1": []}
         st.session_state.session_titles = {"Session 1": "New Chat"}
@@ -262,45 +267,44 @@ with col1:
 
 if prompt := st.chat_input(f"Type here..."):
     
-    # 1. Update UI (User Message)
+    # 1. Update UI
     st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
     save_to_sheet(st.session_state.active_session_id, "user", prompt)
 
-    # 2. GENERATE RESPONSE (STREAMING)
+    # 2. GENERATE RESPONSE (STATUS BAR MODE)
     with st.chat_message("assistant"):
-        # We create a placeholder to update text on the fly
-        message_placeholder = st.empty()
-        full_response = ""
-        
+        # CREATE A LIVE STATUS BAR
+        status = st.status("🧠 Analyzing Request...", expanded=True)
         try:
             inputs = [prompt]
-            if knowledge_base: inputs.extend(knowledge_base)
+            if knowledge_base: 
+                status.write("📂 Reading Flavor Bible & Case Studies...")
+                inputs.extend(knowledge_base)
             if up_content:
+                status.write("🖼️ Analyzing uploaded image...")
                 inputs.append(up_content)
                 if up_img: inputs.append("(Analyze image)")
             
-            # STREAMING ENABLED
-            response_stream = model.generate_content(inputs, stream=True)
+            # RUN GENERATION (Standard Mode)
+            status.write("⚡ Drafting Response...")
+            response = model.generate_content(inputs)
             
-            for chunk in response_stream:
-                if chunk.text:
-                    full_response += chunk.text
-                    message_placeholder.markdown(full_response + "▌") # Blinking cursor effect
+            # COMPLETE
+            status.update(label="✅ Complete", state="complete", expanded=False)
             
-            message_placeholder.markdown(full_response) # Final clean text
+            st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": response.text})
+            st.markdown(response.text)
+            save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             
-            # Save to history
-            st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
-            save_to_sheet(st.session_state.active_session_id, "assistant", full_response)
-        
         except Exception as e:
+            status.update(label="❌ Error", state="error", expanded=True)
             if "403" in str(e) or "404" in str(e):
-                st.toast("⚠️ Refreshing Connection...")
+                st.error("⚠️ Database connection stale. Clicking 'Refresh Memory' in sidebar...")
                 st.cache_resource.clear()
-                time.sleep(1)
+                time.sleep(2)
                 st.rerun()
             else:
                 st.error(f"Error: {e}")
