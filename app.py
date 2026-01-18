@@ -72,8 +72,6 @@ if "history_loaded" not in st.session_state:
                     rebuilt = {}
                     titles = {}
                     max_num = 1
-                    
-                    # Group data by Session ID
                     temp_first_msgs = {} 
 
                     for row in data[1:]: 
@@ -82,7 +80,6 @@ if "history_loaded" not in st.session_state:
                             if sid not in rebuilt: rebuilt[sid] = []
                             rebuilt[sid].append({"role": role, "content": txt})
                             
-                            # Capture first user message for title
                             if role == "user" and sid not in temp_first_msgs:
                                 temp_first_msgs[sid] = txt
 
@@ -91,7 +88,6 @@ if "history_loaded" not in st.session_state:
                                 if n > max_num: max_num = n
                             except: pass
                     
-                    # Generate Titles
                     for sid, first_msg in temp_first_msgs.items():
                         titles[sid] = get_smart_title(first_msg)
 
@@ -220,14 +216,12 @@ def load_knowledge_base():
     
     for filename in files:
         if not os.path.exists(filename): continue
-        
         try:
             ref = genai.upload_file(filename)
             while ref.state.name == "PROCESSING":
                 time.sleep(1)
                 ref = genai.get_file(ref.name)
             loaded.append(ref)
-            time.sleep(1) 
         except Exception as e:
             print(f"Skipping {filename}: {e}")
             
@@ -268,40 +262,50 @@ with col1:
 
 if prompt := st.chat_input(f"Type here..."):
     
-    # 1. Update UI
+    # 1. Update UI (User Message)
     st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
     save_to_sheet(st.session_state.active_session_id, "user", prompt)
 
-    # 2. GENERATE RESPONSE (Immediate)
+    # 2. GENERATE RESPONSE (STREAMING)
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            try:
-                inputs = [prompt]
-                if knowledge_base: inputs.extend(knowledge_base)
-                if up_content:
-                    inputs.append(up_content)
-                    if up_img: inputs.append("(Analyze image)")
-                
-                response = model.generate_content(inputs)
-                st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": response.text})
-                st.markdown(response.text)
-                save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
+        # We create a placeholder to update text on the fly
+        message_placeholder = st.empty()
+        full_response = ""
+        
+        try:
+            inputs = [prompt]
+            if knowledge_base: inputs.extend(knowledge_base)
+            if up_content:
+                inputs.append(up_content)
+                if up_img: inputs.append("(Analyze image)")
             
-            except Exception as e:
-                # --- AUTO-FIX FOR 403 ERROR ---
-                if "403" in str(e) or "404" in str(e):
-                    st.toast("⚠️ Refreshing Connection...")
-                    st.cache_resource.clear() # Wipe old file IDs
-                    time.sleep(1)
-                    st.rerun() # Restart to upload fresh files
-                else:
-                    st.error(f"Error: {e}")
+            # STREAMING ENABLED
+            response_stream = model.generate_content(inputs, stream=True)
+            
+            for chunk in response_stream:
+                if chunk.text:
+                    full_response += chunk.text
+                    message_placeholder.markdown(full_response + "▌") # Blinking cursor effect
+            
+            message_placeholder.markdown(full_response) # Final clean text
+            
+            # Save to history
+            st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
+            save_to_sheet(st.session_state.active_session_id, "assistant", full_response)
+        
+        except Exception as e:
+            if "403" in str(e) or "404" in str(e):
+                st.toast("⚠️ Refreshing Connection...")
+                st.cache_resource.clear()
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error(f"Error: {e}")
 
-    # 3. SILENT TITLE GENERATION (After response is done)
+    # 3. SILENT TITLE GENERATION
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
-        # No rerun here! The title will update silently next time you click something.
