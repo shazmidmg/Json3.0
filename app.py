@@ -50,7 +50,6 @@ except Exception as e:
 def get_smart_title(user_text):
     """Generates a smart 3-5 word title using Gemini Flash"""
     try:
-        # Fast & Cheap call
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(f"Generate a 3-4 word title for this chat request. No quotes. Input: {user_text}")
         clean_title = response.text.strip().replace('"', '').replace("Title:", "")
@@ -58,7 +57,7 @@ def get_smart_title(user_text):
     except:
         return (user_text[:25] + "..") if len(user_text) > 25 else user_text
 
-# --- 4. RESTORE HISTORY & GENERATE TITLES ---
+# --- 4. RESTORE HISTORY ---
 if "history_loaded" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
     st.session_state.session_titles = {"Session 1": "New Chat"}
@@ -67,7 +66,7 @@ if "history_loaded" not in st.session_state:
     
     if sheet:
         try:
-            with st.spinner("🔄 Restoring & Renaming History..."):
+            with st.spinner("🔄 Restoring History..."):
                 data = sheet.get_all_values()
                 if len(data) > 1:
                     rebuilt = {}
@@ -75,18 +74,15 @@ if "history_loaded" not in st.session_state:
                     max_num = 1
                     
                     # Group data by Session ID
-                    temp_first_msgs = {} # Store first msg of each session to title it later
+                    temp_first_msgs = {} 
 
                     for row in data[1:]: 
                         if len(row) >= 4:
                             ts, sid, role, txt = row[0], row[1], row[2], row[3]
-                            
-                            if sid not in rebuilt: 
-                                rebuilt[sid] = []
-                            
+                            if sid not in rebuilt: rebuilt[sid] = []
                             rebuilt[sid].append({"role": role, "content": txt})
                             
-                            # Capture the very first user message for the title
+                            # Capture first user message for title
                             if role == "user" and sid not in temp_first_msgs:
                                 temp_first_msgs[sid] = txt
 
@@ -95,10 +91,8 @@ if "history_loaded" not in st.session_state:
                                 if n > max_num: max_num = n
                             except: pass
                     
-                    # Generate Smart Titles for all restored sessions
-                    # (We do this in a batch to keep it organized)
+                    # Generate Titles
                     for sid, first_msg in temp_first_msgs.items():
-                        # Only generate if it's not "New Chat"
                         titles[sid] = get_smart_title(first_msg)
 
                     if rebuilt:
@@ -134,7 +128,7 @@ with st.sidebar:
     if "confirm_overwrite" not in st.session_state:
         st.session_state.confirm_overwrite = False
 
-    # NEW CHAT (With Safety Check)
+    # NEW CHAT
     if st.session_state.confirm_overwrite:
         st.warning("⚠️ Limit Reached (10/10)")
         col_conf1, col_conf2 = st.columns(2)
@@ -168,13 +162,12 @@ with st.sidebar:
 
     st.divider()
 
-    # SMART TITLE LIST
+    # SESSION LIST
     names = list(st.session_state.chat_sessions.keys())
     if not names:
         st.warning("No active chats.")
     else:
         for name in names[::-1]:
-            # Use the smart title, fallback to ID
             display = st.session_state.session_titles.get(name, name)
             
             style = "secondary"
@@ -219,7 +212,7 @@ with col2:
 
 st.markdown(f"<h3 style='text-align: center;'>Drink Innovation Manager</h3>", unsafe_allow_html=True)
 
-# --- 8. SELF-HEALING KNOWLEDGE LOADER (Fixes 403 Error) ---
+# --- 8. SELF-HEALING KNOWLEDGE LOADER ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
@@ -229,21 +222,13 @@ def load_knowledge_base():
         if not os.path.exists(filename): continue
         
         try:
-            # 1. Try to upload the file
             ref = genai.upload_file(filename)
-            
-            # 2. Wait for it to be ready
             while ref.state.name == "PROCESSING":
                 time.sleep(1)
                 ref = genai.get_file(ref.name)
-            
-            # 3. Validation Check (The Fix for 403)
-            # We assume it's good if we just uploaded it.
             loaded.append(ref)
-            time.sleep(1) # Polite pause for Tier 1
-            
+            time.sleep(1) 
         except Exception as e:
-            # If upload fails, just skip it to prevent app crash
             print(f"Skipping {filename}: {e}")
             
     return loaded
@@ -258,13 +243,12 @@ CITATION RULE: You MUST cite your source (e.g., "According to the Flavor Bible..
 Discovery Protocol: Ask 3 questions (Name, Direction, Category).
 """
 
-# --- 9. MODEL ---
 try:
     model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
 except:
     model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 10. CHAT LOGIC ---
+# --- 9. CHAT LOGIC ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -291,14 +275,7 @@ if prompt := st.chat_input(f"Type here..."):
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
     save_to_sheet(st.session_state.active_session_id, "user", prompt)
 
-    # 2. GENERATE SMART TITLE
-    # Logic: If current title is "New Chat", rename it IMMEDIATELY based on this prompt
-    if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
-        new_title = get_smart_title(prompt)
-        st.session_state.session_titles[st.session_state.active_session_id] = new_title
-        st.rerun() # Refresh sidebar instantly
-
-    # 3. GENERATE RESPONSE
+    # 2. GENERATE RESPONSE (Immediate)
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
@@ -312,11 +289,19 @@ if prompt := st.chat_input(f"Type here..."):
                 st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": response.text})
                 st.markdown(response.text)
                 save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
+            
             except Exception as e:
-                # If we get a 403 error here, it means the files expired mid-session
+                # --- AUTO-FIX FOR 403 ERROR ---
                 if "403" in str(e) or "404" in str(e):
-                     st.error("⚠️ Connection refreshed. Please try asking again.")
-                     # Clear cache to force reload next time
-                     st.cache_resource.clear()
+                    st.toast("⚠️ Refreshing Connection...")
+                    st.cache_resource.clear() # Wipe old file IDs
+                    time.sleep(1)
+                    st.rerun() # Restart to upload fresh files
                 else:
-                     st.error(f"Error: {e}")
+                    st.error(f"Error: {e}")
+
+    # 3. SILENT TITLE GENERATION (After response is done)
+    if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
+        new_title = get_smart_title(prompt)
+        st.session_state.session_titles[st.session_state.active_session_id] = new_title
+        # No rerun here! The title will update silently next time you click something.
