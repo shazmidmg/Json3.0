@@ -218,11 +218,12 @@ with st.sidebar:
                  st.session_state.session_counter = 1
             st.rerun()
     
-    # --- RESTORED BUTTON ---
+    # MANUAL REFRESH BUTTON
     if st.button("🔄 Refresh Memory", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
-        
+
+    # LOGOUT BUTTON
     if st.button("🔒 Logout", use_container_width=True):
         st.session_state.password_correct = False
         st.rerun()
@@ -348,4 +349,7 @@ if prompt := st.chat_input(f"Type here..."):
                 st.error(f"Error: {e}")
 
     # 3. SILENT TITLE GENERATION
+    # The indentation below is fixed!
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
+        new_title = get_smart_title(prompt)
+        st.session_state.session_titles[st.session_state.active_session_id] = new_title
