@@ -11,13 +11,13 @@ import pandas as pd
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (UPDATED FOR LEFT ALIGNMENT) ---
+# --- 2. CSS STYLING (UPDATED) ---
 st.markdown("""
 <style>
-    /* HIDE STREAMLIT UI */
+    /* HIDE STREAMLIT UI - BUT KEEP HEADER VISIBLE FOR MOBILE SIDEBAR ARROW */
     #MainMenu {visibility: hidden; display: none;}
     footer {visibility: hidden; display: none;}
-    /* header {visibility: hidden;}  <-- REMOVED THIS LINE TO FIX MOBILE SIDEBAR */
+    /* header {visibility: hidden;} <-- REMOVED TO SHOW MOBILE SIDEBAR ARROW */
     .stDeployButton {display: none;}
     
     /* TITLES */
@@ -27,44 +27,63 @@ st.markdown("""
 
     /* --- SIDEBAR BUTTONS: FORCE LEFT ALIGNMENT --- */
     
-    /* Target the button element inside the Sidebar */
     [data-testid="stSidebar"] .stButton > button {
         width: 100% !important;
         display: flex !important; 
-        justify-content: flex-start !important; /* This forces items to the left */
+        justify-content: flex-start !important;
         text-align: left !important;
         padding-left: 15px !important;
         align-items: center !important;
     }
 
-    /* Ensure the internal text container also aligns left */
     [data-testid="stSidebar"] .stButton > button > div {
         text-align: left !important;
     }
 
-    /* GREEN BUTTONS (Default - History Items) */
+    /* === BUTTON COLOR SYSTEM === */
+
+    /* 1. DEFAULT (SECONDARY) -> GREY/TRANSPARENT */
+    /* Applied to: Download, Refresh, Logout, Inactive History */
     div.stButton > button {
-        background-color: #e8f5e9 !important;
-        color: #2e7d32 !important;
-        border: 1px solid #2e7d32 !important;
+        background-color: transparent !important;
+        color: #e0e0e0 !important;
+        border: 1px solid #4a4a4a !important;
         border-radius: 8px;
     }
     div.stButton > button:hover {
+        border-color: #808080 !important;
+        color: #ffffff !important;
+    }
+
+    /* 2. PRIMARY -> GREEN */
+    /* Applied to: New Chat, Active Session */
+    div.stButton > button[kind="primary"] {
+        background-color: #e8f5e9 !important;
+        color: #2e7d32 !important;
+        border: 1px solid #2e7d32 !important;
+    }
+    div.stButton > button[kind="primary"]:hover {
         background-color: #c8e6c9 !important;
         border-color: #1b5e20 !important;
     }
 
-    /* RED BUTTONS (Logout/Wipe) */
-    div.stButton > button[kind="primary"] {
+    /* 3. DANGER -> RED (Specific Overrides) */
+    /* We target the buttons by position from the bottom of the sidebar */
+    
+    /* WIPE EVERYTHING (2nd button from bottom) */
+    [data-testid="stSidebar"] div.stButton:nth-last-of-type(2) button {
         background-color: #ffebee !important;
         color: #c62828 !important;
         border: 1px solid #c62828 !important;
     }
-    div.stButton > button[kind="primary"]:hover {
-        background-color: #ffcdd2 !important;
-        border-color: #b71c1c !important;
-    }
     
+    /* DELETE CHAT (3rd button from bottom) */
+    [data-testid="stSidebar"] div.stButton:nth-last-of-type(3) button {
+        background-color: #ffebee !important;
+        color: #c62828 !important;
+        border: 1px solid #c62828 !important;
+    }
+
     /* CENTER LOGO IN MAIN AREA */
     div[data-testid="stImage"] {
         display: block;
@@ -188,26 +207,16 @@ def clear_google_sheet():
             st.error(f"Failed to clear database: {e}")
 
 def delete_session_from_db(session_id):
-    """Deletes a specific session from Google Sheet"""
     if sheet:
         try:
-            # 1. Get all data
             all_rows = sheet.get_all_values()
             if not all_rows: return
-            
-            # 2. Filter out rows that belong to this session_id (Index 1)
-            # We keep the header (Index 0)
             header = all_rows[0]
             data_rows = all_rows[1:]
-            
-            # Keep rows where Session ID != the one we are deleting
             new_rows = [row for row in data_rows if len(row) > 1 and row[1] != session_id]
-            
-            # 3. Clear and Re-upload
             sheet.clear()
             sheet.append_row(header)
             if new_rows:
-                # Use update for bulk write if possible, or append rows
                 sheet.update(range_name='A2', values=new_rows)
         except Exception as e:
             st.error(f"Error removing from DB: {e}")
@@ -219,8 +228,8 @@ with st.sidebar:
     if "confirm_wipe" not in st.session_state: st.session_state.confirm_wipe = False
     if "confirm_del_chat" not in st.session_state: st.session_state.confirm_del_chat = False
 
-    # 1. NEW CHAT
-    if st.button("➕ New Chat", use_container_width=True):
+    # 1. NEW CHAT (Green - Primary)
+    if st.button("➕ New Chat", use_container_width=True, type="primary"):
         st.session_state.session_counter += 1
         new_name = f"Session {st.session_state.session_counter}"
         st.session_state.chat_sessions[new_name] = []
@@ -237,70 +246,70 @@ with st.sidebar:
     else:
         for name in names[::-1]:
             display = st.session_state.session_titles.get(name, name)
-            prefix = "🟢 " if name == st.session_state.active_session_id else "" 
             
-            if st.button(f"{prefix}{display}", key=f"btn_{name}", use_container_width=True):
+            # Logic: Active = Primary (Green), Inactive = Secondary (Grey)
+            btn_type = "primary" if name == st.session_state.active_session_id else "secondary"
+            prefix = "🟢 " if name == st.session_state.active_session_id else ""
+            
+            if st.button(f"{prefix}{display}", key=f"btn_{name}", use_container_width=True, type=btn_type):
                 st.session_state.active_session_id = name
                 st.rerun()
 
     st.divider()
     
-    # 3. CONTROLS
+    # 3. CONTROLS HIERARCHY
+    # Order: Download -> Refresh -> Delete Chat -> Wipe Everything -> Logout
+    
+    # [1] DOWNLOAD LOG (Normal/Grey)
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Log_{st.session_state.active_session_id}.txt", use_container_width=True)
 
-        # --- DELETE SPECIFIC CHAT BUTTON ---
-        if st.session_state.confirm_del_chat:
-             st.warning("⚠️ Delete this specific chat?")
-             c1, c2 = st.columns(2)
-             if c1.button("✅ Yes"):
-                 sid_to_del = st.session_state.active_session_id
-                 
-                 # 1. Delete from DB
-                 delete_session_from_db(sid_to_del)
-                 
-                 # 2. Delete from Session State
-                 if sid_to_del in st.session_state.chat_sessions:
-                     del st.session_state.chat_sessions[sid_to_del]
-                 if sid_to_del in st.session_state.session_titles:
-                     del st.session_state.session_titles[sid_to_del]
-                 
-                 # 3. Switch to another session
-                 remaining = list(st.session_state.chat_sessions.keys())
-                 if remaining:
-                     st.session_state.active_session_id = remaining[-1]
-                 else:
-                     st.session_state.session_counter += 1
-                     new_name = f"Session {st.session_state.session_counter}"
-                     st.session_state.chat_sessions[new_name] = []
-                     st.session_state.session_titles[new_name] = "New Chat"
-                     st.session_state.active_session_id = new_name
-
-                 st.session_state.confirm_del_chat = False
-                 st.rerun()
-                 
-             if c2.button("❌ Cancel"):
-                 st.session_state.confirm_del_chat = False
-                 st.rerun()
-        else:
-             if st.button("🗑️ Delete Chat", use_container_width=True):
-                 st.session_state.confirm_del_chat = True
-                 st.rerun()
-
+    # [2] REFRESH MEMORY (Normal/Grey)
     if st.button("🔄 Refresh Memory", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
-        
-    if st.button("🔒 Logout", use_container_width=True, type="primary"):
-        st.session_state.password_correct = False
-        st.rerun()
 
-    # 4. WIPE EVERYTHING
+    # [3] DELETE CHAT (Red - via CSS nth-last-of-type(3))
+    # We always render this button to maintain CSS order, but disable if no chat
+    disable_del = st.session_state.active_session_id is None
+    
+    if st.session_state.confirm_del_chat:
+         st.warning("⚠️ Delete this chat?")
+         c1, c2 = st.columns(2)
+         if c1.button("✅ Yes"):
+             sid_to_del = st.session_state.active_session_id
+             delete_session_from_db(sid_to_del)
+             if sid_to_del in st.session_state.chat_sessions:
+                 del st.session_state.chat_sessions[sid_to_del]
+             if sid_to_del in st.session_state.session_titles:
+                 del st.session_state.session_titles[sid_to_del]
+             
+             remaining = list(st.session_state.chat_sessions.keys())
+             if remaining:
+                 st.session_state.active_session_id = remaining[-1]
+             else:
+                 st.session_state.session_counter += 1
+                 new_name = f"Session {st.session_state.session_counter}"
+                 st.session_state.chat_sessions[new_name] = []
+                 st.session_state.session_titles[new_name] = "New Chat"
+                 st.session_state.active_session_id = new_name
+
+             st.session_state.confirm_del_chat = False
+             st.rerun()
+         if c2.button("❌ Cancel"):
+             st.session_state.confirm_del_chat = False
+             st.rerun()
+    else:
+         if st.button("🗑️ Delete Chat", use_container_width=True, disabled=disable_del):
+             st.session_state.confirm_del_chat = True
+             st.rerun()
+
+    # [4] WIPE EVERYTHING (Red - via CSS nth-last-of-type(2))
     if st.session_state.confirm_wipe:
-        st.warning("⚠️ PERMANENTLY DELETE DATABASE?")
+        st.warning("⚠️ DELETE DATABASE?")
         col1, col2 = st.columns(2)
-        if col1.button("✅ Yes", type="primary"): 
+        if col1.button("✅ Yes"): 
             clear_google_sheet()
             st.session_state.chat_sessions = {"Session 1": []}
             st.session_state.session_titles = {"Session 1": "New Chat"}
@@ -312,23 +321,22 @@ with st.sidebar:
             st.session_state.confirm_wipe = False
             st.rerun()
     else:
-        if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
+        if st.button("💣 Wipe Everything", use_container_width=True):
             st.session_state.confirm_wipe = True
             st.rerun()
 
-# --- 9. MAIN INTERFACE (UPDATED FOR ALIGNMENT) ---
+    # [5] LOGOUT (Normal/Grey - Last Button)
+    if st.button("🔒 Logout", use_container_width=True):
+        st.session_state.password_correct = False
+        st.rerun()
 
-# Create two columns: A narrow one for the Logo, a wide one for the Title
+# --- 9. MAIN INTERFACE ---
 col_logo, col_title = st.columns([0.15, 0.85]) 
-
 with col_logo:
     try: 
-        # Display Logo (width adjusted to sit nicely next to text)
         st.image("logo.png", width=150) 
-    except: 
-        st.header("🍹")
+    except: st.header("🍹")
 
-# Title Left Aligned
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
 # --- 10. KNOWLEDGE BASE ---
@@ -350,7 +358,6 @@ def load_knowledge_base():
 with st.spinner("⚡ Starting Engine 3.0..."):
     knowledge_base = load_knowledge_base()
 
-# --- NEW UPDATED PROMPT ---
 HIDDEN_PROMPT = """
 You are the Talented Drink Innovation Manager at Monin Malaysia. You help your users think of innovative drink ideas that match the requirements while being able to make the customer personas fall in love with the drink. 
 
