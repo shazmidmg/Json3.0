@@ -11,6 +11,30 @@ import pandas as pd
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Monin Innovation Lab", layout="wide", initial_sidebar_state="expanded")
 
+# --- 2. SECURITY GATE (LOGIN SYSTEM) ---
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    if st.session_state.get("password_correct", False):
+        return True
+
+    st.markdown("<h1 style='text-align: center;'>🔒 Monin Lab Access</h1>", unsafe_allow_html=True)
+    password = st.text_input("Enter Password", type="password")
+    
+    if st.button("Login"):
+        if password == st.secrets["APP_PASSWORD"]:
+            st.session_state["password_correct"] = True
+            st.rerun()
+        else:
+            st.error("❌ Incorrect Password")
+    return False
+
+if not check_password():
+    st.stop()
+
+# ==========================================
+#  ✅ AUTHORIZED ZONE STARTS HERE
+# ==========================================
+
 # Hide Streamlit Watermarks
 hide_st_style = """
 <style>
@@ -31,7 +55,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. AUTHENTICATION ---
+# --- 3. AUTHENTICATION ---
 sheet = None
 try:
     if "GEMINI_API_KEY" in st.secrets:
@@ -46,9 +70,8 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Database Offline: {e}")
 
-# --- 3. SMART TITLE GENERATOR ---
+# --- 4. SMART TITLE GENERATOR ---
 def get_smart_title(user_text):
-    """Generates a smart 3-5 word title using Gemini Flash"""
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(f"Generate a 3-4 word title for this chat request. No quotes. Input: {user_text}")
@@ -57,7 +80,7 @@ def get_smart_title(user_text):
     except:
         return (user_text[:25] + "..") if len(user_text) > 25 else user_text
 
-# --- 4. RESTORE HISTORY ---
+# --- 5. RESTORE HISTORY ---
 if "history_loaded" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
     st.session_state.session_titles = {"Session 1": "New Chat"}
@@ -99,7 +122,7 @@ if "history_loaded" not in st.session_state:
             st.session_state.history_loaded = True
         except: st.session_state.history_loaded = True
 
-# --- 5. HELPER FUNCTIONS ---
+# --- 6. HELPER FUNCTIONS ---
 def format_chat_log(session_name, messages):
     log_text = f"--- MONIN LOG: {session_name} ---\nDate: {datetime.now()}\n\n"
     if not messages: return log_text + "(Empty)"
@@ -115,19 +138,18 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 6. SIDEBAR UI ---
+# --- 7. SIDEBAR UI ---
 with st.sidebar:
     st.header("🗄️ Tier 1 History")
     count = len(st.session_state.chat_sessions)
     st.caption(f"Active Memory: {count}/10 Sessions")
     
-    # State managers for confirmations
     if "confirm_overwrite" not in st.session_state:
         st.session_state.confirm_overwrite = False
     if "confirm_wipe" not in st.session_state:
         st.session_state.confirm_wipe = False
 
-    # NEW CHAT (With Safety Check)
+    # NEW CHAT
     if st.session_state.confirm_overwrite:
         st.warning("⚠️ Limit Reached (10/10)")
         col_conf1, col_conf2 = st.columns(2)
@@ -196,12 +218,16 @@ with st.sidebar:
                  st.session_state.session_counter = 1
             st.rerun()
     
-    # MANUAL REFRESH BUTTON
+    # --- RESTORED BUTTON ---
     if st.button("🔄 Refresh Memory", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
+        
+    if st.button("🔒 Logout", use_container_width=True):
+        st.session_state.password_correct = False
+        st.rerun()
 
-    # WIPE EVERYTHING (WITH CONFIRMATION)
+    # WIPE EVERYTHING
     if st.session_state.confirm_wipe:
         st.warning("⚠️ DELETE ALL HISTORY?")
         col_wipe1, col_wipe2 = st.columns(2)
@@ -220,7 +246,7 @@ with st.sidebar:
             st.session_state.confirm_wipe = True
             st.rerun()
 
-# --- 7. MAIN UI ---
+# --- 8. MAIN UI ---
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     try: st.image("logo.png", use_container_width=True) 
@@ -228,7 +254,7 @@ with col2:
 
 st.markdown(f"<h3 style='text-align: center;'>Drink Innovation Manager</h3>", unsafe_allow_html=True)
 
-# --- 8. SELF-HEALING KNOWLEDGE LOADER ---
+# --- 9. SELF-HEALING KNOWLEDGE LOADER ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
@@ -262,7 +288,7 @@ try:
 except:
     model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 9. CHAT LOGIC ---
+# --- 10. CHAT LOGIC ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -323,5 +349,3 @@ if prompt := st.chat_input(f"Type here..."):
 
     # 3. SILENT TITLE GENERATION
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
-        new_title = get_smart_title(prompt)
-        st.session_state.session_titles[st.session_state.active_session_id] = new_title
