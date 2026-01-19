@@ -251,14 +251,6 @@ with col_logo:
     except: 
         st.header("🍹")
 
-with col_title:
-    # Use HTML margin-top to vertically center the text with the logo
-    st.markdown("""
-        <h3 style='margin-top: 25px; margin-bottom: 0;'>
-            Beverage Innovator 3.0 <span style='font-size: 15px; color: gray;'>🔗</span>
-        </h3>
-    """, unsafe_allow_html=True)
-
 # Title Left Aligned
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
@@ -373,4 +365,5 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
 
