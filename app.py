@@ -9,18 +9,52 @@ import time
 import pandas as pd
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="Monin Innovation Lab", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. SECURITY GATE (LOGIN SYSTEM) ---
+# --- 2. CSS STYLING (COLORS & LOGO) ---
+st.markdown("""
+<style>
+    /* 1. HIDE STREAMLIT BRANDING (Nuclear Option) */
+    #MainMenu {visibility: hidden; display: none;}
+    footer {visibility: hidden; display: none;}
+    header {visibility: hidden;}
+    .stDeployButton {display: none;}
+    
+    /* 2. FRIENDLY BUTTONS (Green by Default) */
+    div.stButton > button {
+        background-color: #e8f5e9 !important; /* Light Green */
+        color: #2e7d32 !important; /* Dark Green Text */
+        border: 1px solid #2e7d32 !important;
+        border-radius: 8px;
+        text-align: left !important;
+    }
+    div.stButton > button:hover {
+        background-color: #c8e6c9 !important;
+        border-color: #1b5e20 !important;
+    }
+
+    /* 3. DANGER BUTTONS (Red for Primary) */
+    div.stButton > button[kind="primary"] {
+        background-color: #ffebee !important; /* Light Red */
+        color: #c62828 !important; /* Dark Red Text */
+        border: 1px solid #c62828 !important;
+    }
+    div.stButton > button[kind="primary"]:hover {
+        background-color: #ffcdd2 !important;
+        border-color: #b71c1c !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- 3. SECURITY GATE ---
 def check_password():
-    """Returns `True` if the user had the correct password."""
     if st.session_state.get("password_correct", False):
         return True
 
-    st.markdown("<h1 style='text-align: center;'>🔒 Monin Lab Access</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🔒 Innovator Access</h1>", unsafe_allow_html=True)
     password = st.text_input("Enter Password", type="password")
     
-    if st.button("Login"):
+    if st.button("Login"): 
         if password == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
             st.rerun()
@@ -32,30 +66,10 @@ if not check_password():
     st.stop()
 
 # ==========================================
-#  ✅ AUTHORIZED ZONE STARTS HERE
+#  ✅ APP LOGIC STARTS HERE
 # ==========================================
 
-# Hide Streamlit Watermarks
-hide_st_style = """
-<style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-</style>
-"""
-st.markdown(hide_st_style, unsafe_allow_html=True)
-
-# Custom Button Styling
-st.markdown("""
-<style>
-    div.stButton > button {
-        width: 100%;
-        border-radius: 8px;
-        text-align: left !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# --- 3. AUTHENTICATION ---
+# --- 4. DATABASE CONNECTION ---
 sheet = None
 try:
     if "GEMINI_API_KEY" in st.secrets:
@@ -70,17 +84,16 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Database Offline: {e}")
 
-# --- 4. SMART TITLE GENERATOR ---
+# --- 5. SMART TITLE GENERATOR ---
 def get_smart_title(user_text):
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(f"Generate a 3-4 word title for this chat request. No quotes. Input: {user_text}")
-        clean_title = response.text.strip().replace('"', '').replace("Title:", "")
-        return clean_title
+        response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
+        return response.text.strip().replace('"', '').replace("Title:", "")
     except:
         return (user_text[:25] + "..") if len(user_text) > 25 else user_text
 
-# --- 5. RESTORE HISTORY ---
+# --- 6. RESTORE HISTORY ---
 if "history_loaded" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
     st.session_state.session_titles = {"Session 1": "New Chat"}
@@ -89,7 +102,7 @@ if "history_loaded" not in st.session_state:
     
     if sheet:
         try:
-            with st.spinner("🔄 Restoring History..."):
+            with st.spinner("🔄 Syncing Database..."):
                 data = sheet.get_all_values()
                 if len(data) > 1:
                     rebuilt = {}
@@ -105,7 +118,7 @@ if "history_loaded" not in st.session_state:
                             
                             if role == "user" and sid not in temp_first_msgs:
                                 temp_first_msgs[sid] = txt
-
+                            
                             try:
                                 n = int(sid.replace("Session ", ""))
                                 if n > max_num: max_num = n
@@ -122,12 +135,12 @@ if "history_loaded" not in st.session_state:
             st.session_state.history_loaded = True
         except: st.session_state.history_loaded = True
 
-# --- 6. HELPER FUNCTIONS ---
+# --- 7. HELPER FUNCTIONS ---
 def format_chat_log(session_name, messages):
-    log_text = f"--- MONIN LOG: {session_name} ---\nDate: {datetime.now()}\n\n"
+    log_text = f"--- LOG: {session_name} ---\nDate: {datetime.now()}\n\n"
     if not messages: return log_text + "(Empty)"
     for msg in messages:
-        role = "MANAGER" if msg["role"] == "assistant" else "USER"
+        role = "AI" if msg["role"] == "assistant" else "USER"
         log_text += f"[{role}]:\n{msg['content']}\n\n{'-'*40}\n\n"
     return log_text
 
@@ -138,108 +151,73 @@ def save_to_sheet(session_id, role, content):
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
-# --- 7. SIDEBAR UI ---
-with st.sidebar:
-    st.header("🗄️ Tier 1 History")
-    count = len(st.session_state.chat_sessions)
-    st.caption(f"Active Memory: {count}/10 Sessions")
-    
-    if "confirm_overwrite" not in st.session_state:
-        st.session_state.confirm_overwrite = False
-    if "confirm_wipe" not in st.session_state:
-        st.session_state.confirm_wipe = False
+def clear_google_sheet():
+    """Wipes the Google Sheet content to prevent zombie history."""
+    if sheet:
+        try:
+            sheet.clear()
+            sheet.append_row(["Timestamp", "Session ID", "Role", "Content"]) # Re-add header
+        except Exception as e:
+            st.error(f"Failed to clear database: {e}")
 
-    # NEW CHAT
-    if st.session_state.confirm_overwrite:
-        st.warning("⚠️ Limit Reached (10/10)")
-        col_conf1, col_conf2 = st.columns(2)
-        if col_conf1.button("✅ Confirm"):
-            oldest = list(st.session_state.chat_sessions.keys())[0]
-            del st.session_state.chat_sessions[oldest]
-            if st.session_state.active_session_id == oldest: st.session_state.active_session_id = None
-            
-            st.session_state.session_counter += 1
-            new_name = f"Session {st.session_state.session_counter}"
-            st.session_state.chat_sessions[new_name] = []
-            st.session_state.session_titles[new_name] = "New Chat"
-            st.session_state.active_session_id = new_name
-            st.session_state.confirm_overwrite = False
-            st.rerun()
-        if col_conf2.button("❌ Cancel"):
-            st.session_state.confirm_overwrite = False
-            st.rerun()
-    else:
-        if st.button("➕ New Chat", type="primary", use_container_width=True):
-            if count >= 10:
-                st.session_state.confirm_overwrite = True
-                st.rerun()
-            else:
-                st.session_state.session_counter += 1
-                new_name = f"Session {st.session_state.session_counter}"
-                st.session_state.chat_sessions[new_name] = []
-                st.session_state.session_titles[new_name] = "New Chat"
-                st.session_state.active_session_id = new_name
-                st.rerun()
+# --- 8. SIDEBAR ---
+with st.sidebar:
+    st.header("🗄️ History")
+    
+    if "confirm_wipe" not in st.session_state: st.session_state.confirm_wipe = False
+
+    # 1. NEW CHAT
+    if st.button("➕ New Chat", use_container_width=True):
+        st.session_state.session_counter += 1
+        new_name = f"Session {st.session_state.session_counter}"
+        st.session_state.chat_sessions[new_name] = []
+        st.session_state.session_titles[new_name] = "New Chat"
+        st.session_state.active_session_id = new_name
+        st.rerun()
 
     st.divider()
 
-    # SESSION LIST
+    # 2. SESSION LIST
     names = list(st.session_state.chat_sessions.keys())
     if not names:
-        st.warning("No active chats.")
+        st.caption("No history found.")
     else:
         for name in names[::-1]:
             display = st.session_state.session_titles.get(name, name)
+            icon = "🟢 " if name == st.session_state.active_session_id else "📄 "
             
-            style = "secondary"
-            icon = "📄 "
-            if name == st.session_state.active_session_id:
-                style = "primary"
-                icon = "🟢 "
-            
-            if st.button(f"{icon}{display}", key=f"btn_{name}", use_container_width=True, type=style):
+            if st.button(f"{icon}{display}", key=f"btn_{name}", use_container_width=True):
                 st.session_state.active_session_id = name
                 st.rerun()
 
     st.divider()
     
+    # 3. CONTROLS
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
-        st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Monin_{st.session_state.active_session_id}.txt", use_container_width=True)
-        
-        if st.button("🗑️ Delete Current Session", use_container_width=True):
-            del st.session_state.chat_sessions[st.session_state.active_session_id]
-            remaining = list(st.session_state.chat_sessions.keys())
-            st.session_state.active_session_id = remaining[-1] if remaining else None
-            if not remaining:
-                 st.session_state.chat_sessions = {"Session 1": []}
-                 st.session_state.session_titles = {"Session 1": "New Chat"}
-                 st.session_state.active_session_id = "Session 1"
-                 st.session_state.session_counter = 1
-            st.rerun()
-    
-    # MANUAL REFRESH BUTTON
+        st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Log_{st.session_state.active_session_id}.txt", use_container_width=True)
+
     if st.button("🔄 Refresh Memory", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
-
-    # LOGOUT BUTTON
-    if st.button("🔒 Logout", use_container_width=True):
+        
+    if st.button("🔒 Logout", use_container_width=True, type="primary"):
         st.session_state.password_correct = False
         st.rerun()
 
-    # WIPE EVERYTHING
+    # 4. WIPE EVERYTHING
     if st.session_state.confirm_wipe:
-        st.warning("⚠️ DELETE ALL HISTORY?")
-        col_wipe1, col_wipe2 = st.columns(2)
-        if col_wipe1.button("✅ Yes, Delete"):
+        st.warning("⚠️ PERMANENTLY DELETE DATABASE?")
+        col1, col2 = st.columns(2)
+        if col1.button("✅ Yes", type="primary"): 
+            clear_google_sheet()
             st.session_state.chat_sessions = {"Session 1": []}
             st.session_state.session_titles = {"Session 1": "New Chat"}
             st.session_state.active_session_id = "Session 1"
             st.session_state.session_counter = 1
             st.session_state.confirm_wipe = False
             st.rerun()
-        if col_wipe2.button("❌ No, Cancel"):
+        if col2.button("❌ No"):
             st.session_state.confirm_wipe = False
             st.rerun()
     else:
@@ -247,20 +225,20 @@ with st.sidebar:
             st.session_state.confirm_wipe = True
             st.rerun()
 
-# --- 8. MAIN UI ---
+# --- 9. MAIN INTERFACE ---
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    try: st.image("logo.png", use_container_width=True) 
-    except: st.header("🍹 Monin Lab")
+    try: 
+        st.image("logo.png", width=80) 
+    except: st.header("🍹")
 
-st.markdown(f"<h3 style='text-align: center;'>Drink Innovation Manager</h3>", unsafe_allow_html=True)
+st.markdown(f"<h3 style='text-align: center;'>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
-# --- 9. SELF-HEALING KNOWLEDGE LOADER ---
+# --- 10. KNOWLEDGE BASE ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded = []
-    
     for filename in files:
         if not os.path.exists(filename): continue
         try:
@@ -269,16 +247,14 @@ def load_knowledge_base():
                 time.sleep(1)
                 ref = genai.get_file(ref.name)
             loaded.append(ref)
-        except Exception as e:
-            print(f"Skipping {filename}: {e}")
-            
+        except: pass
     return loaded
 
-with st.spinner("⚡ Tier 1: Loading Knowledge Base..."):
+with st.spinner("⚡ Starting Engine 3.0..."):
     knowledge_base = load_knowledge_base()
 
 HIDDEN_PROMPT = """
-You are the Talented Drink Innovation Manager at Monin Malaysia. 
+You are the Beverage Innovator 3.0.
 CRITICAL: You have access to the Flavor Bible (Split), Case Studies, and Client Data.
 CITATION RULE: You MUST cite your source (e.g., "According to the Flavor Bible...").
 Discovery Protocol: Ask 3 questions (Name, Direction, Category).
@@ -289,7 +265,7 @@ try:
 except:
     model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 10. CHAT LOGIC ---
+# --- 11. CHAT LOGIC ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -307,49 +283,61 @@ with col1:
                 up_img = True
             else: up_content = up_file.getvalue().decode("utf-8")
 
-if prompt := st.chat_input(f"Type here..."):
+if prompt := st.chat_input(f"Innovate here..."):
     
-    # 1. Update UI
+    # User Message
     st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
     save_to_sheet(st.session_state.active_session_id, "user", prompt)
 
-    # 2. GENERATE RESPONSE (STATUS BAR MODE)
+    # Response
     with st.chat_message("assistant"):
-        status = st.status("🧠 Analyzing Request...", expanded=True)
+        status = st.status("🧠 Innovator 3.0 Thinking...", expanded=True)
         try:
-            inputs = [prompt]
-            if knowledge_base: 
-                status.write("📂 Reading Flavor Bible & Case Studies...")
-                inputs.extend(knowledge_base)
-            if up_content:
-                status.write("🖼️ Analyzing uploaded image...")
-                inputs.append(up_content)
-                if up_img: inputs.append("(Analyze image)")
+            # --- MEMORY FIX: Build Full Context Loop ---
+            messages_for_api = []
             
-            status.write("⚡ Drafting Response...")
-            response = model.generate_content(inputs)
+            # 1. Add Knowledge Base (As Context)
+            if knowledge_base:
+                parts = list(knowledge_base)
+                parts.append("System Context: Reference materials attached. Use them.")
+                messages_for_api.append({"role": "user", "parts": parts})
+                messages_for_api.append({"role": "model", "parts": ["Acknowledged."]})
+
+            # 2. Add Chat History (The Memory)
+            # We iterate through the session history to ensure the model knows previous context
+            for msg in st.session_state.chat_sessions[st.session_state.active_session_id]:
+                role = "model" if msg["role"] == "assistant" else "user"
+                
+                # Handle the last message (current prompt) differently if it has attachments
+                if msg["content"] == prompt and msg == st.session_state.chat_sessions[st.session_state.active_session_id][-1]:
+                     current_parts = [prompt]
+                     if up_content:
+                         current_parts.append(up_content)
+                         if up_img: current_parts.append("Analyze this image.")
+                     messages_for_api.append({"role": role, "parts": current_parts})
+                else:
+                     messages_for_api.append({"role": role, "parts": [msg["content"]]})
+
+            status.write("⚡ Generating Solution...")
+            response = model.generate_content(messages_for_api)
             
-            status.update(label="✅ Complete", state="complete", expanded=False)
+            status.update(label="✅ Ready", state="complete", expanded=False)
             
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": response.text})
             st.markdown(response.text)
             save_to_sheet(st.session_state.active_session_id, "assistant", response.text)
             
         except Exception as e:
-            status.update(label="❌ Error", state="error", expanded=True)
+            status.update(label="❌ Connection Lost", state="error", expanded=True)
             if "403" in str(e) or "404" in str(e):
-                st.error("⚠️ Database connection stale. Clicking 'Refresh Memory' in sidebar...")
-                st.cache_resource.clear()
-                time.sleep(2)
-                st.rerun()
+                st.error("⚠️ Connection Reset. Please click 'Refresh Memory' on the left.")
             else:
                 st.error(f"Error: {e}")
 
-    # 3. SILENT TITLE GENERATION
-    # The indentation below is fixed!
+    # Title Update
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
