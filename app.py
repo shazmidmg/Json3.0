@@ -11,37 +11,50 @@ import pandas as pd
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (COLORS & LOGO) ---
+# --- 2. CSS STYLING ---
 st.markdown("""
 <style>
-    /* 1. HIDE STREAMLIT BRANDING (Nuclear Option) */
+    /* HIDE STREAMLIT UI */
     #MainMenu {visibility: hidden; display: none;}
     footer {visibility: hidden; display: none;}
     header {visibility: hidden;}
     .stDeployButton {display: none;}
     
-    /* 2. FRIENDLY BUTTONS (Green by Default) */
+    /* LEFT ALIGN TITLES */
+    h1, h2, h3 {
+        text-align: left !important;
+    }
+
+    /* BUTTON STYLING (Green Default) */
     div.stButton > button {
-        background-color: #e8f5e9 !important; /* Light Green */
-        color: #2e7d32 !important; /* Dark Green Text */
+        background-color: #e8f5e9 !important;
+        color: #2e7d32 !important;
         border: 1px solid #2e7d32 !important;
         border-radius: 8px;
-        text-align: left !important;
+        text-align: left !important; /* Forces text to the left */
+        padding-left: 15px !important;
     }
     div.stButton > button:hover {
         background-color: #c8e6c9 !important;
         border-color: #1b5e20 !important;
     }
 
-    /* 3. DANGER BUTTONS (Red for Primary) */
+    /* RED BUTTONS */
     div.stButton > button[kind="primary"] {
-        background-color: #ffebee !important; /* Light Red */
-        color: #c62828 !important; /* Dark Red Text */
+        background-color: #ffebee !important;
+        color: #c62828 !important;
         border: 1px solid #c62828 !important;
     }
     div.stButton > button[kind="primary"]:hover {
         background-color: #ffcdd2 !important;
         border-color: #b71c1c !important;
+    }
+    
+    /* CENTER LOGO */
+    div[data-testid="stImage"] {
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -51,7 +64,7 @@ def check_password():
     if st.session_state.get("password_correct", False):
         return True
 
-    st.markdown("<h1 style='text-align: center;'>🔒 Innovator Access</h1>", unsafe_allow_html=True)
+    st.markdown("<h1>🔒 Innovator Access</h1>", unsafe_allow_html=True) # Left aligned
     password = st.text_input("Enter Password", type="password")
     
     if st.button("Login"): 
@@ -152,11 +165,10 @@ def save_to_sheet(session_id, role, content):
         except: pass
 
 def clear_google_sheet():
-    """Wipes the Google Sheet content to prevent zombie history."""
     if sheet:
         try:
             sheet.clear()
-            sheet.append_row(["Timestamp", "Session ID", "Role", "Content"]) # Re-add header
+            sheet.append_row(["Timestamp", "Session ID", "Role", "Content"])
         except Exception as e:
             st.error(f"Failed to clear database: {e}")
 
@@ -177,16 +189,18 @@ with st.sidebar:
 
     st.divider()
 
-    # 2. SESSION LIST
+    # 2. SESSION LIST (Cleaned up - No "Sheet" Logo)
     names = list(st.session_state.chat_sessions.keys())
     if not names:
         st.caption("No history found.")
     else:
         for name in names[::-1]:
             display = st.session_state.session_titles.get(name, name)
-            icon = "🟢 " if name == st.session_state.active_session_id else "📄 "
             
-            if st.button(f"{icon}{display}", key=f"btn_{name}", use_container_width=True):
+            # Logic: Only show '🟢' if active. Otherwise, show nothing (clean text).
+            prefix = "🟢 " if name == st.session_state.active_session_id else "" 
+            
+            if st.button(f"{prefix}{display}", key=f"btn_{name}", use_container_width=True):
                 st.session_state.active_session_id = name
                 st.rerun()
 
@@ -226,13 +240,17 @@ with st.sidebar:
             st.rerun()
 
 # --- 9. MAIN INTERFACE ---
-col1, col2, col3 = st.columns([1, 2, 1])
+
+# Layout: Logo Centered, Text Left Aligned
+col1, col2, col3 = st.columns([1, 1, 1]) # Balanced columns for better centering
 with col2:
     try: 
-        st.image("logo.png", width=80) 
+        # Logo increased to 150px
+        st.image("logo.png", width=150) 
     except: st.header("🍹")
 
-st.markdown(f"<h3 style='text-align: center;'>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
+# Title Left Aligned
+st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
 # --- 10. KNOWLEDGE BASE ---
 @st.cache_resource
@@ -260,12 +278,18 @@ CITATION RULE: You MUST cite your source (e.g., "According to the Flavor Bible..
 Discovery Protocol: Ask 3 questions (Name, Direction, Category).
 """
 
+# --- 11. MODEL SELECTOR (GEMINI 3 FLASH PREVIEW) ---
 try:
-    model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
+    model = genai.GenerativeModel("gemini-3-flash-preview", system_instruction=HIDDEN_PROMPT)
+    st.toast("🚀 Running on Gemini 3 Flash Preview!")
 except:
-    model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
+        st.toast("⚡ Running on Gemini 2.0 Flash")
+    except:
+        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 11. CHAT LOGIC ---
+# --- 12. CHAT LOGIC ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -296,22 +320,20 @@ if prompt := st.chat_input(f"Innovate here..."):
     with st.chat_message("assistant"):
         status = st.status("🧠 Innovator 3.0 Thinking...", expanded=True)
         try:
-            # --- MEMORY FIX: Build Full Context Loop ---
+            # Full Context Loop
             messages_for_api = []
             
-            # 1. Add Knowledge Base (As Context)
+            # 1. Knowledge Base
             if knowledge_base:
                 parts = list(knowledge_base)
                 parts.append("System Context: Reference materials attached. Use them.")
                 messages_for_api.append({"role": "user", "parts": parts})
                 messages_for_api.append({"role": "model", "parts": ["Acknowledged."]})
 
-            # 2. Add Chat History (The Memory)
-            # We iterate through the session history to ensure the model knows previous context
+            # 2. History
             for msg in st.session_state.chat_sessions[st.session_state.active_session_id]:
                 role = "model" if msg["role"] == "assistant" else "user"
                 
-                # Handle the last message (current prompt) differently if it has attachments
                 if msg["content"] == prompt and msg == st.session_state.chat_sessions[st.session_state.active_session_id][-1]:
                      current_parts = [prompt]
                      if up_content:
