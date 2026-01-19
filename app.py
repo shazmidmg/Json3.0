@@ -305,7 +305,7 @@ with st.sidebar:
              st.session_state.confirm_del_chat = True
              st.rerun()
 
-    # [4] DELETE EVERYTHING (Red - via CSS nth-last-of-type(2))
+    # [4] DELETE ALL CHAT (Red - via CSS nth-last-of-type(2))
     if st.session_state.confirm_wipe:
         st.warning("⚠️ DELETE DATABASE?")
         col1, col2 = st.columns(2)
@@ -321,7 +321,7 @@ with st.sidebar:
             st.session_state.confirm_wipe = False
             st.rerun()
     else:
-        if st.button("💣 Delete Everything", use_container_width=True):
+        if st.button("💣 Delete All Chat", use_container_width=True):
             st.session_state.confirm_wipe = True
             st.rerun()
 
@@ -601,4 +601,5 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
 
