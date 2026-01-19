@@ -11,7 +11,7 @@ import pandas as pd
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (THE DESIGN ENGINE) ---
+# --- 2. CSS STYLING ---
 st.markdown("""
 <style>
     /* HIDE STREAMLIT UI */
@@ -20,62 +20,36 @@ st.markdown("""
     header {visibility: hidden;}
     .stDeployButton {display: none;}
     
-    /* GLOBAL TEXT ALIGNMENT */
+    /* LEFT ALIGN TITLES */
     h1, h2, h3 {
         text-align: left !important;
     }
 
-    /* === BUTTON STYLING SYSTEM === */
-
-    /* 1. DEFAULT BUTTONS (Secondary) - Dark/Grey */
-    /* Used for: Inactive History, Download, Refresh */
+    /* BUTTON STYLING (Green Default) */
     div.stButton > button {
-        background-color: transparent !important;
-        color: #e0e0e0 !important; /* Light Text */
-        border: 1px solid #4a4a4a !important;
+        background-color: #e8f5e9 !important;
+        color: #2e7d32 !important;
+        border: 1px solid #2e7d32 !important;
         border-radius: 8px;
-        
-        /* LEFT ALIGNMENT FIX */
-        display: flex !important;
-        justify-content: flex-start !important; /* Pushes text to left */
-        text-align: left !important;
+        text-align: left !important; /* Forces text to the left */
         padding-left: 15px !important;
     }
     div.stButton > button:hover {
-        border-color: #808080 !important;
-        color: #ffffff !important;
+        background-color: #c8e6c9 !important;
+        border-color: #1b5e20 !important;
     }
 
-    /* 2. ACTIVE/PRIMARY BUTTONS - Green */
-    /* Used for: New Chat, Selected Session */
+    /* RED BUTTONS */
     div.stButton > button[kind="primary"] {
-        background-color: #e8f5e9 !important; /* Light Green Background */
-        color: #2e7d32 !important; /* Dark Green Text */
-        border: 1px solid #2e7d32 !important;
+        background-color: #ffebee !important;
+        color: #c62828 !important;
+        border: 1px solid #c62828 !important;
     }
     div.stButton > button[kind="primary"]:hover {
-        background-color: #c8e6c9 !important;
-    }
-
-    /* 3. DANGER BUTTONS - Red (Overrides) */
-    /* We target the LAST TWO buttons in the sidebar specifically to make them Red */
-    
-    /* The Last Button (Wipe Everything) */
-    section[data-testid="stSidebar"] div.stButton:nth-last-of-type(1) button {
-        background-color: #ffebee !important;
-        color: #c62828 !important;
-        border: 1px solid #c62828 !important;
-        justify-content: center !important; /* Keep these centered */
+        background-color: #ffcdd2 !important;
+        border-color: #b71c1c !important;
     }
     
-    /* The 2nd Last Button (Logout) */
-    section[data-testid="stSidebar"] div.stButton:nth-last-of-type(2) button {
-        background-color: #ffebee !important;
-        color: #c62828 !important;
-        border: 1px solid #c62828 !important;
-        justify-content: center !important;
-    }
-
     /* CENTER LOGO */
     div[data-testid="stImage"] {
         display: block;
@@ -90,7 +64,7 @@ def check_password():
     if st.session_state.get("password_correct", False):
         return True
 
-    st.markdown("<h1>🔒 Innovator Access</h1>", unsafe_allow_html=True)
+    st.markdown("<h1>🔒 Innovator Access</h1>", unsafe_allow_html=True) # Left aligned
     password = st.text_input("Enter Password", type="password")
     
     if st.button("Login"): 
@@ -204,8 +178,8 @@ with st.sidebar:
     
     if "confirm_wipe" not in st.session_state: st.session_state.confirm_wipe = False
 
-    # 1. NEW CHAT (Green - Primary)
-    if st.button("➕ New Chat", use_container_width=True, type="primary"):
+    # 1. NEW CHAT
+    if st.button("➕ New Chat", use_container_width=True):
         st.session_state.session_counter += 1
         new_name = f"Session {st.session_state.session_counter}"
         st.session_state.chat_sessions[new_name] = []
@@ -215,7 +189,7 @@ with st.sidebar:
 
     st.divider()
 
-    # 2. SESSION LIST
+    # 2. SESSION LIST (Cleaned up - No "Sheet" Logo)
     names = list(st.session_state.chat_sessions.keys())
     if not names:
         st.caption("No history found.")
@@ -223,15 +197,10 @@ with st.sidebar:
         for name in names[::-1]:
             display = st.session_state.session_titles.get(name, name)
             
-            # LOGIC: 
-            # If Active -> type="primary" (GREEN)
-            # If Inactive -> type="secondary" (GREY/DEFAULT)
+            # Logic: Only show '🟢' if active. Otherwise, show nothing (clean text).
+            prefix = "🟢 " if name == st.session_state.active_session_id else "" 
             
-            is_active = (name == st.session_state.active_session_id)
-            btn_type = "primary" if is_active else "secondary"
-            
-            # Removed the icon argument for a cleaner look
-            if st.button(f"{display}", key=f"btn_{name}", use_container_width=True, type=btn_type):
+            if st.button(f"{prefix}{display}", key=f"btn_{name}", use_container_width=True):
                 st.session_state.active_session_id = name
                 st.rerun()
 
@@ -240,22 +209,19 @@ with st.sidebar:
     # 3. CONTROLS
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
-        # Download is Secondary (Grey)
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Log_{st.session_state.active_session_id}.txt", use_container_width=True)
 
-    # Refresh is Secondary (Grey)
     if st.button("🔄 Refresh Memory", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
         
-    # Logout is Red (Handled by CSS targeting last-of-type(2))
-    if st.button("🔒 Logout", use_container_width=True):
+    if st.button("🔒 Logout", use_container_width=True, type="primary"):
         st.session_state.password_correct = False
         st.rerun()
 
-    # Wipe is Red (Handled by CSS targeting last-of-type(1))
+    # 4. WIPE EVERYTHING
     if st.session_state.confirm_wipe:
-        st.warning("⚠️ DELETE DATABASE?")
+        st.warning("⚠️ PERMANENTLY DELETE DATABASE?")
         col1, col2 = st.columns(2)
         if col1.button("✅ Yes", type="primary"): 
             clear_google_sheet()
@@ -269,18 +235,18 @@ with st.sidebar:
             st.session_state.confirm_wipe = False
             st.rerun()
     else:
-        if st.button("💣 Wipe Everything", use_container_width=True):
+        if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
             st.session_state.confirm_wipe = True
             st.rerun()
 
 # --- 9. MAIN INTERFACE ---
 
-# Layout: Logo Centered
-col1, col2, col3 = st.columns([1, 2, 1]) 
+# Layout: Logo Centered, Text Left Aligned
+col1, col2, col3 = st.columns([1, 1, 1]) # Balanced columns for better centering
 with col2:
     try: 
-        # Logo increased to 200px
-        st.image("logo.png", width=200) 
+        # Logo increased to 150px
+        st.image("logo.png", width=150) 
     except: st.header("🍹")
 
 # Title Left Aligned
