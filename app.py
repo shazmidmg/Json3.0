@@ -254,13 +254,13 @@ with st.sidebar:
 
 # --- 9. MAIN INTERFACE (UPDATED FOR ALIGNMENT) ---
 
-col_logo, col_title = st.columns([0.15, 0.85]) 
-
-with col_logo:
+# Layout: Logo Centered
+col1, col2, col3 = st.columns([1, 2, 1]) 
+with col2:
     try: 
-        st.image("logo.png", width=100) 
-    except: 
-        st.header("🍹")
+        # Logo increased to 200px
+        st.image("logo.png", width=200) 
+    except: st.header("🍹")
 
 with col_title:
     st.markdown("""
@@ -532,3 +532,4 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
