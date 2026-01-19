@@ -260,7 +260,7 @@ col_logo, col_title = st.columns([0.15, 0.85])
 with col_logo:
     try: 
         # Display Logo (width adjusted to sit nicely next to text)
-        st.image("logo.png", width=100) 
+        st.image("logo.png", width=150) 
     except: 
         st.header("🍹")
 
@@ -530,6 +530,7 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
 
 
 
