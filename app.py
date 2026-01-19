@@ -17,7 +17,7 @@ st.markdown("""
     /* HIDE STREAMLIT UI */
     #MainMenu {visibility: hidden; display: none;}
     footer {visibility: hidden; display: none;}
-    header {visibility: hidden;}
+    /* header {visibility: hidden;}  <-- REMOVED THIS LINE TO FIX MOBILE SIDEBAR */
     .stDeployButton {display: none;}
     
     /* TITLES */
@@ -187,11 +187,37 @@ def clear_google_sheet():
         except Exception as e:
             st.error(f"Failed to clear database: {e}")
 
+def delete_session_from_db(session_id):
+    """Deletes a specific session from Google Sheet"""
+    if sheet:
+        try:
+            # 1. Get all data
+            all_rows = sheet.get_all_values()
+            if not all_rows: return
+            
+            # 2. Filter out rows that belong to this session_id (Index 1)
+            # We keep the header (Index 0)
+            header = all_rows[0]
+            data_rows = all_rows[1:]
+            
+            # Keep rows where Session ID != the one we are deleting
+            new_rows = [row for row in data_rows if len(row) > 1 and row[1] != session_id]
+            
+            # 3. Clear and Re-upload
+            sheet.clear()
+            sheet.append_row(header)
+            if new_rows:
+                # Use update for bulk write if possible, or append rows
+                sheet.update(range_name='A2', values=new_rows)
+        except Exception as e:
+            st.error(f"Error removing from DB: {e}")
+
 # --- 8. SIDEBAR ---
 with st.sidebar:
     st.header("🗄️ History")
     
     if "confirm_wipe" not in st.session_state: st.session_state.confirm_wipe = False
+    if "confirm_del_chat" not in st.session_state: st.session_state.confirm_del_chat = False
 
     # 1. NEW CHAT
     if st.button("➕ New Chat", use_container_width=True):
@@ -223,6 +249,44 @@ with st.sidebar:
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Log_{st.session_state.active_session_id}.txt", use_container_width=True)
+
+        # --- DELETE SPECIFIC CHAT BUTTON ---
+        if st.session_state.confirm_del_chat:
+             st.warning("⚠️ Delete this specific chat?")
+             c1, c2 = st.columns(2)
+             if c1.button("✅ Yes"):
+                 sid_to_del = st.session_state.active_session_id
+                 
+                 # 1. Delete from DB
+                 delete_session_from_db(sid_to_del)
+                 
+                 # 2. Delete from Session State
+                 if sid_to_del in st.session_state.chat_sessions:
+                     del st.session_state.chat_sessions[sid_to_del]
+                 if sid_to_del in st.session_state.session_titles:
+                     del st.session_state.session_titles[sid_to_del]
+                 
+                 # 3. Switch to another session
+                 remaining = list(st.session_state.chat_sessions.keys())
+                 if remaining:
+                     st.session_state.active_session_id = remaining[-1]
+                 else:
+                     st.session_state.session_counter += 1
+                     new_name = f"Session {st.session_state.session_counter}"
+                     st.session_state.chat_sessions[new_name] = []
+                     st.session_state.session_titles[new_name] = "New Chat"
+                     st.session_state.active_session_id = new_name
+
+                 st.session_state.confirm_del_chat = False
+                 st.rerun()
+                 
+             if c2.button("❌ Cancel"):
+                 st.session_state.confirm_del_chat = False
+                 st.rerun()
+        else:
+             if st.button("🗑️ Delete Chat", use_container_width=True):
+                 st.session_state.confirm_del_chat = True
+                 st.rerun()
 
     if st.button("🔄 Refresh Memory", use_container_width=True):
         st.cache_resource.clear()
@@ -530,7 +594,3 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
-
-
-
-
