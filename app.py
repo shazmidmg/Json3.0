@@ -25,32 +25,42 @@ st.markdown("""
         text-align: left !important;
     }
 
-    /* BUTTON STYLING (Green Default) */
+    /* --- SIDEBAR BUTTON STYLING --- */
+    
+    /* Target ALL buttons in the sidebar */
+    section[data-testid="stSidebar"] div.stButton > button {
+        text-align: left !important;
+        justify-content: flex-start !important; /* CRITICAL: Moves text to the left */
+        padding-left: 20px !important;
+        width: 100% !important;
+    }
+
+    /* GREEN BUTTONS (Default) */
     div.stButton > button {
         background-color: #e8f5e9 !important;
         color: #2e7d32 !important;
         border: 1px solid #2e7d32 !important;
         border-radius: 8px;
-        text-align: left !important; /* Forces text to the left */
-        padding-left: 15px !important;
     }
     div.stButton > button:hover {
         background-color: #c8e6c9 !important;
         border-color: #1b5e20 !important;
     }
 
-    /* RED BUTTONS */
+    /* RED BUTTONS (Primary) */
     div.stButton > button[kind="primary"] {
         background-color: #ffebee !important;
         color: #c62828 !important;
         border: 1px solid #c62828 !important;
+        justify-content: flex-start !important; /* Ensure Red buttons also align left */
+        padding-left: 20px !important;
     }
     div.stButton > button[kind="primary"]:hover {
         background-color: #ffcdd2 !important;
         border-color: #b71c1c !important;
     }
     
-    /* CENTER LOGO */
+    /* CENTER LOGO IN MAIN AREA */
     div[data-testid="stImage"] {
         display: block;
         margin-left: auto;
@@ -365,6 +375,7 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
 
 
 
