@@ -20,22 +20,29 @@ st.markdown("""
     header {visibility: hidden;}
     .stDeployButton {display: none;}
     
-    /* LEFT ALIGN TITLES */
+    /* TITLES */
     h1, h2, h3 {
         text-align: left !important;
     }
 
-    /* --- SIDEBAR BUTTON STYLING --- */
+    /* --- SIDEBAR BUTTONS: FORCE LEFT ALIGNMENT --- */
     
-    /* Target ALL buttons in the sidebar */
-    section[data-testid="stSidebar"] div.stButton > button {
-        text-align: left !important;
-        justify-content: flex-start !important; /* CRITICAL: Moves text to the left */
-        padding-left: 20px !important;
+    /* Target the button element inside the Sidebar */
+    [data-testid="stSidebar"] .stButton > button {
         width: 100% !important;
+        display: flex !important; 
+        justify-content: flex-start !important; /* This forces items to the left */
+        text-align: left !important;
+        padding-left: 15px !important;
+        align-items: center !important;
     }
 
-    /* GREEN BUTTONS (Default) */
+    /* Ensure the internal text container also aligns left */
+    [data-testid="stSidebar"] .stButton > button > div {
+        text-align: left !important;
+    }
+
+    /* GREEN BUTTONS (Default - History Items) */
     div.stButton > button {
         background-color: #e8f5e9 !important;
         color: #2e7d32 !important;
@@ -47,13 +54,11 @@ st.markdown("""
         border-color: #1b5e20 !important;
     }
 
-    /* RED BUTTONS (Primary) */
+    /* RED BUTTONS (Logout/Wipe) */
     div.stButton > button[kind="primary"] {
         background-color: #ffebee !important;
         color: #c62828 !important;
         border: 1px solid #c62828 !important;
-        justify-content: flex-start !important; /* Ensure Red buttons also align left */
-        padding-left: 20px !important;
     }
     div.stButton > button[kind="primary"]:hover {
         background-color: #ffcdd2 !important;
@@ -375,6 +380,7 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
 
 
 
