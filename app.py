@@ -121,10 +121,13 @@ with st.sidebar:
     count = len(st.session_state.chat_sessions)
     st.caption(f"Active Memory: {count}/10 Sessions")
     
+    # State managers for confirmations
     if "confirm_overwrite" not in st.session_state:
         st.session_state.confirm_overwrite = False
+    if "confirm_wipe" not in st.session_state:
+        st.session_state.confirm_wipe = False
 
-    # NEW CHAT
+    # NEW CHAT (With Safety Check)
     if st.session_state.confirm_overwrite:
         st.warning("⚠️ Limit Reached (10/10)")
         col_conf1, col_conf2 = st.columns(2)
@@ -193,17 +196,29 @@ with st.sidebar:
                  st.session_state.session_counter = 1
             st.rerun()
     
-    # MANUAL REFRESH BUTTON (Debug)
+    # MANUAL REFRESH BUTTON
     if st.button("🔄 Refresh Memory", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
 
-    if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
-        st.session_state.chat_sessions = {"Session 1": []}
-        st.session_state.session_titles = {"Session 1": "New Chat"}
-        st.session_state.active_session_id = "Session 1"
-        st.session_state.session_counter = 1
-        st.rerun()
+    # WIPE EVERYTHING (WITH CONFIRMATION)
+    if st.session_state.confirm_wipe:
+        st.warning("⚠️ DELETE ALL HISTORY?")
+        col_wipe1, col_wipe2 = st.columns(2)
+        if col_wipe1.button("✅ Yes, Delete"):
+            st.session_state.chat_sessions = {"Session 1": []}
+            st.session_state.session_titles = {"Session 1": "New Chat"}
+            st.session_state.active_session_id = "Session 1"
+            st.session_state.session_counter = 1
+            st.session_state.confirm_wipe = False
+            st.rerun()
+        if col_wipe2.button("❌ No, Cancel"):
+            st.session_state.confirm_wipe = False
+            st.rerun()
+    else:
+        if st.button("💣 Wipe Everything", type="primary", use_container_width=True):
+            st.session_state.confirm_wipe = True
+            st.rerun()
 
 # --- 7. MAIN UI ---
 col1, col2, col3 = st.columns([1, 2, 1])
@@ -276,7 +291,6 @@ if prompt := st.chat_input(f"Type here..."):
 
     # 2. GENERATE RESPONSE (STATUS BAR MODE)
     with st.chat_message("assistant"):
-        # CREATE A LIVE STATUS BAR
         status = st.status("🧠 Analyzing Request...", expanded=True)
         try:
             inputs = [prompt]
@@ -288,11 +302,9 @@ if prompt := st.chat_input(f"Type here..."):
                 inputs.append(up_content)
                 if up_img: inputs.append("(Analyze image)")
             
-            # RUN GENERATION (Standard Mode)
             status.write("⚡ Drafting Response...")
             response = model.generate_content(inputs)
             
-            # COMPLETE
             status.update(label="✅ Complete", state="complete", expanded=False)
             
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": response.text})
