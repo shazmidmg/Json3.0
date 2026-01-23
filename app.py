@@ -7,22 +7,34 @@ from PIL import Image
 import os
 import time
 import pandas as pd
+import threading
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING ---
+# --- 2. CSS STYLING (CLEAN UI) ---
 st.markdown("""
 <style>
-    /* HIDE STREAMLIT UI */
-    #MainMenu {visibility: hidden; display: none;}
-    footer {visibility: hidden; display: none;}
-    .stDeployButton {display: none;}
+    /* 1. HIDE STREAMLIT FOOTER & WATERMARK */
+    footer {visibility: hidden !important; height: 0px !important;}
+    #MainMenu {visibility: hidden !important; display: none !important;}
     
+    /* 2. HIDE TOP RIGHT MENU (Fork, GitHub, Settings) */
+    [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+    
+    /* 3. HIDE COLORED HEADER BAR */
+    [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
+
+    /* 4. HIDE DEPLOY BUTTON */
+    .stDeployButton {visibility: hidden !important; display: none !important;}
+    
+    /* 5. KEEP HEADER VISIBLE FOR MOBILE ARROW, BUT TRANSPARENT */
+    header {visibility: visible !important; background-color: transparent !important;}
+
     /* TITLES */
     h1, h2, h3 { text-align: left !important; }
 
-    /* --- SIDEBAR BUTTONS --- */
+    /* SIDEBAR BUTTONS */
     [data-testid="stSidebar"] .stButton > button {
         width: 100% !important;
         display: flex !important; 
@@ -31,13 +43,9 @@ st.markdown("""
         padding-left: 15px !important;
         align-items: center !important;
     }
+    [data-testid="stSidebar"] .stButton > button > div { text-align: left !important; }
 
-    [data-testid="stSidebar"] .stButton > button > div {
-        text-align: left !important;
-    }
-
-    /* === BUTTON COLOR SYSTEM === */
-    /* 1. DEFAULT (GREY) */
+    /* BUTTON COLORS */
     div.stButton > button {
         background-color: transparent !important;
         color: #e0e0e0 !important;
@@ -48,8 +56,6 @@ st.markdown("""
         border-color: #808080 !important;
         color: #ffffff !important;
     }
-
-    /* 2. PRIMARY (GREEN) */
     div.stButton > button[kind="primary"] {
         background-color: #e8f5e9 !important;
         color: #2e7d32 !important;
@@ -57,15 +63,9 @@ st.markdown("""
     }
     div.stButton > button[kind="primary"]:hover {
         background-color: #c8e6c9 !important;
-        border-color: #1b5e20 !important;
     }
-
-    /* 3. DANGER (RED) */
-    [data-testid="stSidebar"] div.stButton:nth-last-of-type(2) button {
-        background-color: #ffebee !important;
-        color: #c62828 !important;
-        border: 1px solid #c62828 !important;
-    }
+    /* DANGER BUTTONS (Red) */
+    [data-testid="stSidebar"] div.stButton:nth-last-of-type(2) button,
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(3) button {
         background-color: #ffebee !important;
         color: #c62828 !important;
@@ -73,11 +73,7 @@ st.markdown("""
     }
 
     /* CENTER LOGO */
-    div[data-testid="stImage"] {
-        display: block;
-        margin-left: auto;
-        margin-right: auto;
-    }
+    div[data-testid="stImage"] { display: block; margin-left: auto; margin-right: auto; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -85,10 +81,8 @@ st.markdown("""
 def check_password():
     if st.session_state.get("password_correct", False):
         return True
-
     st.markdown("<h1>🔒 Innovator Access</h1>", unsafe_allow_html=True) 
     password = st.text_input("Enter Password", type="password")
-    
     if st.button("Login"): 
         if password == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
@@ -110,13 +104,10 @@ def connect_to_db():
     try:
         if "gcp_service_account" in st.secrets:
             scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-            creds_dict = dict(st.secrets["gcp_service_account"])
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
             client = gspread.authorize(creds)
-            sheet = client.open("JSON 3.0 Logs").sheet1
-            return sheet
-    except Exception as e:
-        return None
+            return client.open("JSON 3.0 Logs").sheet1
+    except: return None
 
 sheet = connect_to_db()
 
@@ -126,13 +117,13 @@ if "GEMINI_API_KEY" in st.secrets:
 # --- 5. SMART TITLE GENERATOR ---
 def get_smart_title(user_text):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash") # Use 1.5 for cheap/fast background tasks
         response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
         return response.text.strip().replace('"', '').replace("Title:", "")
     except:
         return (user_text[:25] + "..") if len(user_text) > 25 else user_text
 
-# --- 6. HYBRID SYNC HISTORY LOADER ---
+# --- 6. HISTORY LOADER ---
 if "history_loaded" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
     st.session_state.session_titles = {"Session 1": "New Chat"}
@@ -148,34 +139,25 @@ if "history_loaded" not in st.session_state:
                     titles = {}
                     max_num = 1
                     temp_first_msgs = {} 
-
                     for row in data[1:]: 
                         if len(row) >= 4:
-                            ts, sid, role, txt = row[0], row[1], row[2], row[3]
+                            sid, role, txt = row[1], row[2], row[3]
                             if sid not in rebuilt: rebuilt[sid] = []
                             rebuilt[sid].append({"role": role, "content": txt})
-                            
-                            if role == "user" and sid not in temp_first_msgs:
-                                temp_first_msgs[sid] = txt
-                            
+                            if role == "user" and sid not in temp_first_msgs: temp_first_msgs[sid] = txt
                             try:
                                 n = int(sid.replace("Session ", ""))
                                 if n > max_num: max_num = n
                             except: pass
-                    
-                    for sid, first_msg in temp_first_msgs.items():
-                        titles[sid] = get_smart_title(first_msg)
-
+                    for sid, first_msg in temp_first_msgs.items(): titles[sid] = get_smart_title(first_msg)
                     if rebuilt:
                         st.session_state.chat_sessions = rebuilt
                         st.session_state.session_titles = titles
                         st.session_state.session_counter = max_num
                         st.session_state.active_session_id = list(rebuilt.keys())[-1]
             st.session_state.history_loaded = True
-        except: 
-            st.session_state.history_loaded = True
-    else:
-        st.session_state.history_loaded = True
+        except: st.session_state.history_loaded = True
+    else: st.session_state.history_loaded = True
 
 # --- 7. HELPER FUNCTIONS ---
 def format_chat_log(session_name, messages):
@@ -186,20 +168,24 @@ def format_chat_log(session_name, messages):
         log_text += f"[{role}]:\n{msg['content']}\n\n{'-'*40}\n\n"
     return log_text
 
-def save_to_sheet_background(session_id, role, content):
+# --- ⚡ SPEED BOOST: NON-BLOCKING SAVE ---
+def _save_task(session_id, role, content):
     if sheet:
         try:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             sheet.append_row([timestamp, session_id, role, content])
         except: pass
 
+def save_to_sheet_background(session_id, role, content):
+    thread = threading.Thread(target=_save_task, args=(session_id, role, content))
+    thread.start()
+
 def clear_google_sheet():
     if sheet:
         try:
             sheet.clear()
             sheet.append_row(["Timestamp", "Session ID", "Role", "Content"])
-        except Exception as e:
-            st.error(f"Failed to clear database: {e}")
+        except Exception as e: st.error(f"DB Error: {e}")
 
 def delete_session_from_db(session_id):
     if sheet:
@@ -207,23 +193,18 @@ def delete_session_from_db(session_id):
             all_rows = sheet.get_all_values()
             if not all_rows: return
             header = all_rows[0]
-            data_rows = all_rows[1:]
-            new_rows = [row for row in data_rows if len(row) > 1 and row[1] != session_id]
+            new_rows = [row for row in all_rows[1:] if len(row) > 1 and row[1] != session_id]
             sheet.clear()
             sheet.append_row(header)
-            if new_rows:
-                sheet.update(range_name='A2', values=new_rows)
-        except Exception as e:
-            st.error(f"Error removing from DB: {e}")
+            if new_rows: sheet.update(range_name='A2', values=new_rows)
+        except Exception as e: st.error(f"DB Error: {e}")
 
 # --- 8. SIDEBAR ---
 with st.sidebar:
     st.header("🗄️ History")
-    
     if "confirm_wipe" not in st.session_state: st.session_state.confirm_wipe = False
     if "confirm_del_chat" not in st.session_state: st.session_state.confirm_del_chat = False
 
-    # 1. NEW CHAT (Green)
     if st.button("➕ New Chat", use_container_width=True, type="primary"):
         st.session_state.session_counter += 1
         new_name = f"Session {st.session_state.session_counter}"
@@ -234,58 +215,45 @@ with st.sidebar:
 
     st.divider()
 
-    # 2. SESSION LIST
     names = list(st.session_state.chat_sessions.keys())
-    if not names:
-        st.caption("No history found.")
+    if not names: st.caption("No history found.")
     else:
         for name in names[::-1]:
             display = st.session_state.session_titles.get(name, name)
             btn_type = "primary" if name == st.session_state.active_session_id else "secondary"
             prefix = "🟢 " if name == st.session_state.active_session_id else ""
-            
             if st.button(f"{prefix}{display}", key=f"btn_{name}", use_container_width=True, type=btn_type):
                 st.session_state.active_session_id = name
                 st.rerun()
 
     st.divider()
     
-    # 3. CONTROLS
-    
-    # [1] DOWNLOAD
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Log_{st.session_state.active_session_id}.txt", use_container_width=True)
 
-    # [2] REFRESH
     if st.button("🔄 Refresh Memory", use_container_width=True):
         st.cache_resource.clear()
         st.session_state.pop("history_loaded", None)
         st.rerun()
 
-    # [3] DELETE CHAT (Red)
     disable_del = st.session_state.active_session_id is None
     if st.session_state.confirm_del_chat:
          st.warning("⚠️ Delete this chat?")
          c1, c2 = st.columns(2)
          if c1.button("✅ Yes"):
-             sid_to_del = st.session_state.active_session_id
-             delete_session_from_db(sid_to_del)
-             if sid_to_del in st.session_state.chat_sessions:
-                 del st.session_state.chat_sessions[sid_to_del]
-             if sid_to_del in st.session_state.session_titles:
-                 del st.session_state.session_titles[sid_to_del]
-             
+             sid = st.session_state.active_session_id
+             delete_session_from_db(sid)
+             del st.session_state.chat_sessions[sid]
+             if sid in st.session_state.session_titles: del st.session_state.session_titles[sid]
              remaining = list(st.session_state.chat_sessions.keys())
-             if remaining:
-                 st.session_state.active_session_id = remaining[-1]
+             if remaining: st.session_state.active_session_id = remaining[-1]
              else:
                  st.session_state.session_counter += 1
                  new_name = f"Session {st.session_state.session_counter}"
                  st.session_state.chat_sessions[new_name] = []
                  st.session_state.session_titles[new_name] = "New Chat"
                  st.session_state.active_session_id = new_name
-
              st.session_state.confirm_del_chat = False
              st.rerun()
          if c2.button("❌ Cancel"):
@@ -296,11 +264,10 @@ with st.sidebar:
              st.session_state.confirm_del_chat = True
              st.rerun()
 
-    # [4] WIPE EVERYTHING (Red)
     if st.session_state.confirm_wipe:
         st.warning("⚠️ DELETE DATABASE?")
-        col1, col2 = st.columns(2)
-        if col1.button("✅ Yes"): 
+        c1, c2 = st.columns(2)
+        if c1.button("✅ Yes"): 
             clear_google_sheet()
             st.session_state.chat_sessions = {"Session 1": []}
             st.session_state.session_titles = {"Session 1": "New Chat"}
@@ -308,7 +275,7 @@ with st.sidebar:
             st.session_state.session_counter = 1
             st.session_state.confirm_wipe = False
             st.rerun()
-        if col2.button("❌ No"):
+        if c2.button("❌ No"):
             st.session_state.confirm_wipe = False
             st.rerun()
     else:
@@ -316,7 +283,6 @@ with st.sidebar:
             st.session_state.confirm_wipe = True
             st.rerun()
 
-    # [5] LOGOUT
     if st.button("🔒 Logout", use_container_width=True):
         st.session_state.password_correct = False
         st.rerun()
@@ -326,33 +292,24 @@ col_logo, col_title = st.columns([0.15, 0.85])
 with col_logo:
     try: st.image("logo.png", width=150) 
     except: st.header("🍹")
-
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
-# --- 10. KNOWLEDGE BASE ---
+# --- 10. KNOWLEDGE BASE (SMART CACHING) ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded = []
-    
-    try:
-        existing_files = {f.display_name: f for f in genai.list_files()}
-    except:
-        existing_files = {}
-
+    try: existing = {f.display_name: f for f in genai.list_files()}
+    except: existing = {}
     for filename in files:
         if not os.path.exists(filename): continue
-        if filename in existing_files:
-            loaded.append(existing_files[filename])
+        if filename in existing: loaded.append(existing[filename])
         else:
             try:
                 ref = genai.upload_file(filename, display_name=filename)
-                while ref.state.name == "PROCESSING":
-                    time.sleep(1)
-                    ref = genai.get_file(ref.name)
+                while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
                 loaded.append(ref)
-            except Exception as e:
-                pass
+            except: pass
     return loaded
 
 with st.spinner("⚡ Starting Engine 3.0..."):
@@ -364,15 +321,18 @@ You are the Talented Drink Innovation Manager at Monin Malaysia.
 
 Context:
 - Attached in your knowledgebase is the flavour bible, and a few past case studies, keep these in mind.
-- You are very good at crafting creative drinks that are also commercially suitable.
-- Use Monin products.
+- You are very good at crafting creative drinks that are also commercially suitable for the cafe's/business' audience.
+- During the discover session, the user will share a catalog containing all of Monin's products.
 
 Intent:
 - To help the user achieve a certain objective for the cafe/business through crafting innovative drink ideas that will trend instantly.
 
 Discovery Session (Proactive Mode):
 - **STEP 1: ANALYZE.** Look at the user's input.
-- **STEP 2: CHECK MISSING INFO.** (Location, Objective, Category)
+- **STEP 2: CHECK MISSING INFO.**
+  - Cafe Name/Location?
+  - Objective/Direction?
+  - Category (Artisanal, Chain, Restaurant)?
 - **STEP 3: HYBRID RESPONSE.**
   - Acknowledge enthusiasm.
   - Ask missing questions.
@@ -417,15 +377,18 @@ Would you like me to expand on any ideas, combine any flavors, or provide the re
 3. I want to finalise Idea 1, Idea 6 and Idea 12 as my drink ideas, kindly give me the recipe for these ideas.
 """
 
-# --- 12. MODEL SELECTOR ---
+# --- 12. MODEL SELECTOR (GEMINI 3 PRIORITY) ---
 try:
+    # PRIORITY 1: The New Gemini 3 Flash Preview
     model = genai.GenerativeModel("gemini-3-flash-preview", system_instruction=HIDDEN_PROMPT)
     st.toast("🚀 Running on Gemini 3 Flash Preview!")
 except:
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=HIDDEN_PROMPT)
+        # PRIORITY 2: The Fast Gemini 2.0 Flash
+        model = genai.GenerativeModel("gemini-2.0-flash-exp", system_instruction=HIDDEN_PROMPT)
         st.toast("⚡ Running on Gemini 2.0 Flash")
     except:
+        # FALLBACK: Gemini 1.5 Flash (Stable)
         model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
 # --- 13. CHAT LOGIC ---
@@ -454,7 +417,7 @@ if prompt := st.chat_input(f"Innovate here..."):
         st.markdown(prompt)
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
     
-    # Save to Sheet in Background
+    # --- NON-BLOCKING SAVE (INSTANT) ---
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
     # Response
@@ -488,6 +451,7 @@ if prompt := st.chat_input(f"Innovate here..."):
             message_placeholder.markdown(full_response)
             
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
+            # --- NON-BLOCKING SAVE (INSTANT) ---
             save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
             
         except Exception as e:
