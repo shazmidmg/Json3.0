@@ -387,7 +387,7 @@ except:
         # FALLBACK: Gemini 1.5 Flash (Stable)
         model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 13. CHAT LOGIC (FORCED TYPING EFFECT) ---
+# --- 13. CHAT LOGIC (VISUAL STREAMING FIXED) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -416,10 +416,10 @@ if prompt := st.chat_input(f"Innovate here..."):
     # --- NON-BLOCKING SAVE (INSTANT) ---
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
-    # Response with FORCED STREAMING
+    # Response with SMOOTH STREAMING
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
-        # Initial Placeholder to show activity immediately
+        # 1. SHOW STARTING STATUS
         message_placeholder.markdown("🧠 *Generating ideas...*")
         
         full_response = ""
@@ -445,17 +445,23 @@ if prompt := st.chat_input(f"Innovate here..."):
             # --- START STREAMING ---
             response_stream = model.generate_content(messages_for_api, stream=True)
             
-            # --- THE MAGIC LOOP WITH ARTIFICIAL DELAY ---
+            # --- ROBUST LOOP (FIXED) ---
             for chunk in response_stream:
-                if chunk.text:
-                    full_response += chunk.text
-                    # This forces the browser to refresh the UI
+                content = ""
+                # Safely extract text (Handles potential empty chunks)
+                try:
+                    content = chunk.text
+                except Exception:
+                    pass 
+                
+                if content:
+                    full_response += content
+                    # This updates the UI repeatedly
                     message_placeholder.markdown(full_response + "▌")
-                    # ⚠️ SMALL SLEEP: Forces the 'typing' effect to be visible to the human eye
-                    # 0.02s is barely noticeable but enough to prevent the "bulk dump" effect
-                    time.sleep(0.02) 
+                    # ⚠️ CRITICAL: 0.01s sleep forces the UI to render the update
+                    time.sleep(0.01) 
             
-            # --- FINAL RENDER (Remove cursor) ---
+            # --- FINAL RENDER ---
             message_placeholder.markdown(full_response)
             
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
