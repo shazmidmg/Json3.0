@@ -12,7 +12,7 @@ import threading
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (CLEAN UI) ---
+# --- 2. CSS STYLING (CLEAN UI + CLOUD BUTTON) ---
 st.markdown("""
 <style>
     /* HIDE STREAMLIT FOOTER & WATERMARK */
@@ -41,7 +41,7 @@ st.markdown("""
     }
     [data-testid="stSidebar"] .stButton > button > div { text-align: left !important; }
 
-    /* BUTTON COLORS */
+    /* GENERAL BUTTON COLORS */
     div.stButton > button {
         background-color: transparent !important;
         color: #e0e0e0 !important;
@@ -52,6 +52,8 @@ st.markdown("""
         border-color: #808080 !important;
         color: #ffffff !important;
     }
+    
+    /* PRIMARY (GREEN) */
     div.stButton > button[kind="primary"] {
         background-color: #e8f5e9 !important;
         color: #2e7d32 !important;
@@ -60,12 +62,28 @@ st.markdown("""
     div.stButton > button[kind="primary"]:hover {
         background-color: #c8e6c9 !important;
     }
+    
     /* DANGER BUTTONS */
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(2) button,
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(3) button {
         background-color: #ffebee !important;
         color: #c62828 !important;
         border: 1px solid #c62828 !important;
+    }
+
+    /* --- CLOUD UPLOAD BUTTON STYLE --- */
+    /* Target the popover button in the main area (not sidebar) */
+    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"] {
+        border-radius: 25px !important; /* Cloud shape */
+        border: 1px dashed #90caf9 !important;
+        color: #90caf9 !important;
+        background-color: rgba(144, 202, 249, 0.1) !important;
+        transition: all 0.3s ease;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"]:hover {
+        background-color: rgba(144, 202, 249, 0.2) !important;
+        border-color: #42a5f5 !important;
+        color: #ffffff !important;
     }
 
     /* CENTER LOGO */
@@ -297,46 +315,34 @@ def load_knowledge_base():
     loaded = []
     
     try:
-        # Get list of existing files
         existing_files = {f.display_name: f for f in genai.list_files()}
     except:
         existing_files = {}
 
     for filename in files:
         if not os.path.exists(filename): continue
-        
-        # LOGIC: If exists, try to get it. If 403 error, Re-Upload it.
         if filename in existing_files:
             try:
-                # Try accessing the file to check permissions
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
-            except Exception:
-                # Permission denied (403) or missing -> Re-upload
+            except:
                 try:
-                    print(f"Re-uploading {filename} due to permission error...")
                     ref = genai.upload_file(filename, display_name=filename)
-                    while ref.state.name == "PROCESSING":
-                        time.sleep(1)
-                        ref = genai.get_file(ref.name)
+                    while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
                     loaded.append(ref)
                 except: pass
         else:
-            # New upload
             try:
                 ref = genai.upload_file(filename, display_name=filename)
-                while ref.state.name == "PROCESSING":
-                    time.sleep(1)
-                    ref = genai.get_file(ref.name)
+                while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
                 loaded.append(ref)
             except: pass
-            
     return loaded
 
 with st.spinner("⚡ Starting Engine 3.0..."):
     knowledge_base = load_knowledge_base()
 
-# --- 11. SMART PROMPT (BIG HEADERS + CLEAN LISTS) ---
+# --- 11. SMART PROMPT ---
 HIDDEN_PROMPT = """
 You are the Talented Drink Innovation Manager at Monin Malaysia.
 
@@ -398,32 +404,34 @@ Would you like me to expand on any ideas, combine any flavors, or provide the re
 3. I want to finalise Idea 1, Idea 6 and Idea 12 as my drink ideas, kindly give me the recipe for these ideas.
 """
 
-# --- 12. MODEL SELECTOR (GEMINI 3 PRIORITY) ---
+# --- 12. MODEL SELECTOR ---
 try:
-    # PRIORITY 1: The New Gemini 3 Flash Preview
     model = genai.GenerativeModel("gemini-3-flash-preview", system_instruction=HIDDEN_PROMPT)
     st.toast("🚀 Running on Gemini 3 Flash Preview!")
 except:
     try:
-        # PRIORITY 2: The Fast Gemini 2.0 Flash
         model = genai.GenerativeModel("gemini-2.0-flash-exp", system_instruction=HIDDEN_PROMPT)
         st.toast("⚡ Running on Gemini 2.0 Flash")
     except:
-        # FALLBACK: Gemini 1.5 Flash (Stable)
         model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 13. CHAT LOGIC (NATIVE STREAMLIT STREAMING) ---
+# --- 13. CHAT LOGIC (CLOUD UPLOAD BUTTON) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
 
-col1, col2 = st.columns([0.15, 0.85]) 
+# --- CLOUD UPLOAD BUTTON POSITIONED HERE ---
+col1, col2 = st.columns([0.25, 0.75]) 
 with col1:
-    with st.popover("📎 Attach", use_container_width=True):
-        up_file = st.file_uploader("Upload", type=["png", "jpg", "csv", "txt"])
+    # Stylized Popover Button to look like a "Cloud"
+    with st.popover("☁️ Upload (Max 200MB)", use_container_width=True):
+        st.markdown("### ☁️ Upload Knowledge")
+        st.caption("Supported: PNG, JPG, CSV, TXT")
+        st.caption(" **Max Limit:** 200MB per file")
+        up_file = st.file_uploader("Drop files here", type=["png", "jpg", "csv", "txt"], label_visibility="collapsed")
         up_content, up_img = None, False
         if up_file:
-            st.caption("✅ Ready")
+            st.success("File Ready!")
             if "image" in up_file.type:
                 st.image(up_file, width=150)
                 up_content = Image.open(up_file)
@@ -435,11 +443,9 @@ def stream_parser(stream):
     """Yields text from the Gemini response stream safely."""
     for chunk in stream:
         try:
-            # We explicitly check and yield to play nice with st.write_stream
             if chunk.text:
                 yield chunk.text
-        except:
-            pass
+        except: pass
 
 if prompt := st.chat_input(f"Innovate here..."):
     
@@ -449,7 +455,6 @@ if prompt := st.chat_input(f"Innovate here..."):
         st.markdown(prompt)
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
     
-    # --- NON-BLOCKING SAVE (INSTANT) ---
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
     # Response with NATIVE STREAMING
@@ -473,43 +478,12 @@ if prompt := st.chat_input(f"Innovate here..."):
                 else:
                       messages_for_api.append({"role": role, "parts": [msg["content"]]})
 
-            # --- 1. SHOW SPINNER (Only until first token) ---
             with st.spinner("🧠 Thinking..."):
                 response_stream = model.generate_content(messages_for_api, stream=True)
             
-            # --- 2. NATIVE STREAMLIT STREAMING (The Fix) ---
-            # st.write_stream handles the visual typing effect automatically and perfectly.
-            # It also returns the full string at the end for us to save.
-            placeholder = st.empty()
-            full_response = ""
-            buffer = ""
+            # Use Native Streamlit Streaming for best compatibility
+            full_response = st.write_stream(stream_parser(response_stream))
             
-            for chunk in response_stream:
-                try:
-                    if chunk.text:
-                        buffer += chunk.text
-            
-                        # Split by lines so user sees progress
-                        lines = buffer.split("\n")
-                        
-                        # Keep last partial line in buffer
-                        buffer = lines.pop()  
-            
-                        for line in lines:
-                            full_response += line + "\n"
-                            placeholder.markdown(full_response)
-                            time.sleep(0.03)  # typing feel (optional)
-            
-                except:
-                    pass
-            
-            # Flush remaining buffer
-            if buffer:
-                full_response += buffer
-                placeholder.markdown(full_response)
-
-            
-            # --- 3. SAVE ---
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
             save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
             
@@ -520,4 +494,3 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
-
