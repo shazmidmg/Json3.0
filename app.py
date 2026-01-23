@@ -223,6 +223,7 @@ with st.sidebar:
                 st.rerun()
 
     st.divider()
+    
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Log_{st.session_state.active_session_id}.txt", use_container_width=True)
@@ -289,43 +290,22 @@ with col_logo:
     except: st.header("🍹")
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
-# --- 10. KNOWLEDGE BASE (FIXED 403 ERROR) ---
+# --- 10. KNOWLEDGE BASE (SMART CACHING) ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded = []
-    
-    # 1. Fetch Existing Files
-    try:
-        existing_files = {f.display_name: f for f in genai.list_files()}
-    except Exception as e:
-        existing_files = {}
-
-    # 2. Smart Upload with 403 Protection
+    try: existing = {f.display_name: f for f in genai.list_files()}
+    except: existing = {}
     for filename in files:
         if not os.path.exists(filename): continue
-        
-        # Check if file exists in cloud
-        if filename in existing_files:
-            try:
-                # 3. VERIFY PERMISSION (This fixes the 403 crash)
-                file_ref = genai.get_file(existing_files[filename].name)
-                loaded.append(file_ref)
-            except Exception:
-                # If 403 or deleted, Re-Upload
-                try:
-                    ref = genai.upload_file(filename, display_name=filename)
-                    while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
-                    loaded.append(ref)
-                except: pass
+        if filename in existing: loaded.append(existing[filename])
         else:
-            # Fresh Upload
             try:
                 ref = genai.upload_file(filename, display_name=filename)
                 while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
                 loaded.append(ref)
             except: pass
-            
     return loaded
 
 with st.spinner("⚡ Starting Engine 3.0..."):
@@ -395,16 +375,19 @@ Would you like me to expand on any ideas, combine any flavors, or provide the re
 
 # --- 12. MODEL SELECTOR (GEMINI 3 PRIORITY) ---
 try:
+    # PRIORITY 1: The New Gemini 3 Flash Preview
     model = genai.GenerativeModel("gemini-3-flash-preview", system_instruction=HIDDEN_PROMPT)
     st.toast("🚀 Running on Gemini 3 Flash Preview!")
 except:
     try:
+        # PRIORITY 2: The Fast Gemini 2.0 Flash
         model = genai.GenerativeModel("gemini-2.0-flash-exp", system_instruction=HIDDEN_PROMPT)
         st.toast("⚡ Running on Gemini 2.0 Flash")
     except:
+        # FALLBACK: Gemini 1.5 Flash (Stable)
         model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 13. CHAT LOGIC (FORCED TYPING EFFECT) ---
+# --- 13. CHAT LOGIC (NATIVE STREAMLIT STREAMING) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -422,6 +405,17 @@ with col1:
                 up_img = True
             else: up_content = up_file.getvalue().decode("utf-8")
 
+# --- GENERATOR HELPER FOR ST.WRITE_STREAM ---
+def stream_parser(stream):
+    """Yields text from the Gemini response stream safely."""
+    for chunk in stream:
+        try:
+            # We explicitly check and yield to play nice with st.write_stream
+            if chunk.text:
+                yield chunk.text
+        except:
+            pass
+
 if prompt := st.chat_input(f"Innovate here..."):
     
     # User Message
@@ -433,14 +427,8 @@ if prompt := st.chat_input(f"Innovate here..."):
     # --- NON-BLOCKING SAVE (INSTANT) ---
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
-    # Response with FORCED VISIBLE STREAMING
+    # Response with NATIVE STREAMING
     with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        
-        # 1. SHOW "THINKING" (Instant Feedback)
-        message_placeholder.markdown("🧠 *Generating ideas...*")
-        
-        full_response = ""
         try:
             messages_for_api = []
             if knowledge_base:
@@ -460,33 +448,21 @@ if prompt := st.chat_input(f"Innovate here..."):
                 else:
                       messages_for_api.append({"role": role, "parts": [msg["content"]]})
 
-            # --- START STREAMING ---
-            response_stream = model.generate_content(messages_for_api, stream=True)
+            # --- 1. SHOW SPINNER (Only until first token) ---
+            with st.spinner("🧠 Thinking..."):
+                response_stream = model.generate_content(messages_for_api, stream=True)
             
-            # --- THE MAGIC LOOP ---
-            for chunk in response_stream:
-                if chunk.text:
-                    full_response += chunk.text
-                    # Update the placeholder
-                    message_placeholder.markdown(full_response + "▌")
-                    
-                    # ⚠️ CRITICAL: Tiny sleep to force browser to render each frame
-                    # This guarantees the "Typewriter" effect works
-                    time.sleep(0.01) 
+            # --- 2. NATIVE STREAMLIT STREAMING (The Fix) ---
+            # st.write_stream handles the visual typing effect automatically and perfectly.
+            # It also returns the full string at the end for us to save.
+            full_response = st.write_stream(stream_parser(response_stream))
             
-            # --- FINAL RENDER ---
-            message_placeholder.markdown(full_response)
-            
+            # --- 3. SAVE ---
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
             save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
             
         except Exception as e:
-            # Fallback if stream fails (rare)
-            if full_response:
-                 message_placeholder.markdown(full_response)
-                 st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
-            else:
-                 st.error(f"Generation Error: {e}")
+            st.error(f"Error: {e}")
 
     # Title Update
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
