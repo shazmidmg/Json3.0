@@ -11,13 +11,12 @@ import pandas as pd
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (UPDATED) ---
+# --- 2. CSS STYLING ---
 st.markdown("""
 <style>
     /* HIDE STREAMLIT UI - BUT KEEP HEADER VISIBLE FOR MOBILE SIDEBAR ARROW */
     #MainMenu {visibility: hidden; display: none;}
     footer {visibility: hidden; display: none;}
-    /* header {visibility: hidden;} <-- REMOVED TO SHOW MOBILE SIDEBAR ARROW */
     .stDeployButton {display: none;}
     
     /* TITLES */
@@ -26,7 +25,6 @@ st.markdown("""
     }
 
     /* --- SIDEBAR BUTTONS: FORCE LEFT ALIGNMENT --- */
-    
     [data-testid="stSidebar"] .stButton > button {
         width: 100% !important;
         display: flex !important; 
@@ -41,9 +39,7 @@ st.markdown("""
     }
 
     /* === BUTTON COLOR SYSTEM === */
-
     /* 1. DEFAULT (SECONDARY) -> GREY/TRANSPARENT */
-    /* Applied to: Download, Refresh, Logout, Inactive History */
     div.stButton > button {
         background-color: transparent !important;
         color: #e0e0e0 !important;
@@ -56,7 +52,6 @@ st.markdown("""
     }
 
     /* 2. PRIMARY -> GREEN */
-    /* Applied to: New Chat, Active Session */
     div.stButton > button[kind="primary"] {
         background-color: #e8f5e9 !important;
         color: #2e7d32 !important;
@@ -68,16 +63,11 @@ st.markdown("""
     }
 
     /* 3. DANGER -> RED (Specific Overrides) */
-    /* We target the buttons by position from the bottom of the sidebar */
-    
-    /* WIPE EVERYTHING (2nd button from bottom) */
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(2) button {
         background-color: #ffebee !important;
         color: #c62828 !important;
         border: 1px solid #c62828 !important;
     }
-    
-    /* DELETE CHAT (3rd button from bottom) */
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(3) button {
         background-color: #ffebee !important;
         color: #c62828 !important;
@@ -271,7 +261,6 @@ with st.sidebar:
         st.rerun()
 
     # [3] DELETE CHAT (Red - via CSS nth-last-of-type(3))
-    # We always render this button to maintain CSS order, but disable if no chat
     disable_del = st.session_state.active_session_id is None
     
     if st.session_state.confirm_del_chat:
@@ -339,23 +328,40 @@ with col_logo:
 
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
-# --- 10. KNOWLEDGE BASE ---
+# --- 10. KNOWLEDGE BASE (SMART CACHING) ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded = []
+    
+    # 1. Fetch existing files from Gemini Cloud to avoid re-uploading
+    try:
+        existing_files = {f.display_name: f for f in genai.list_files()}
+    except:
+        existing_files = {}
+
     for filename in files:
         if not os.path.exists(filename): continue
-        try:
-            ref = genai.upload_file(filename)
-            while ref.state.name == "PROCESSING":
-                time.sleep(1)
-                ref = genai.get_file(ref.name)
-            loaded.append(ref)
-        except: pass
+        
+        # 2. Check if file is already online
+        if filename in existing_files:
+            loaded.append(existing_files[filename])
+            # print(f"Skipped upload for {filename}") # Debug
+        else:
+            # 3. If not, upload it (Only happens once per 48h)
+            try:
+                # We explicitly set display_name to match filename for tracking
+                ref = genai.upload_file(filename, display_name=filename)
+                while ref.state.name == "PROCESSING":
+                    time.sleep(1)
+                    ref = genai.get_file(ref.name)
+                loaded.append(ref)
+            except Exception as e:
+                pass
+                
     return loaded
 
-with st.spinner("⚡ Starting Engine 3.0..."):
+with st.spinner("⚡ Starting Engine 3.0 (Smart Cache Active)..."):
     knowledge_base = load_knowledge_base()
 
 # --- UPDATED SMART PROMPT ---
