@@ -420,7 +420,7 @@ if prompt := st.chat_input(f"Innovate here..."):
     # --- NON-BLOCKING SAVE (INSTANT) ---
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
-    # Response
+    # Response with LINE-BY-LINE STREAMING
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
@@ -443,10 +443,12 @@ if prompt := st.chat_input(f"Innovate here..."):
                 else:
                       messages_for_api.append({"role": role, "parts": [msg["content"]]})
 
+            # --- THE STREAMING LOGIC IS HERE ---
             response_stream = model.generate_content(messages_for_api, stream=True)
             for chunk in response_stream:
                 if chunk.text:
                     full_response += chunk.text
+                    # This updates the UI repeatedly, creating the "Typing" effect
                     message_placeholder.markdown(full_response + "▌")
             message_placeholder.markdown(full_response)
             
