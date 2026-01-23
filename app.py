@@ -12,7 +12,7 @@ import threading
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (CLEAN UI) ---
+# --- 2. CSS STYLING (CLEAN UI + ANIMATIONS) ---
 st.markdown("""
 <style>
     /* HIDE STREAMLIT FOOTER & WATERMARK */
@@ -80,6 +80,18 @@ st.markdown("""
         background-color: rgba(144, 202, 249, 0.2) !important;
         border-color: #42a5f5 !important;
         color: #ffffff !important;
+    }
+
+    /* --- ANIMATIONS --- */
+    @keyframes pulse {
+        0% { opacity: 0.6; }
+        50% { opacity: 1; }
+        100% { opacity: 0.6; }
+    }
+    .pulsing-text {
+        animation: pulse 1.5s infinite;
+        color: #4caf50;
+        font-weight: bold;
     }
 
     /* CENTER LOGO */
@@ -309,41 +321,28 @@ st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded = []
-    
-    try:
-        # Get list of existing files
-        existing_files = {f.display_name: f for f in genai.list_files()}
-    except:
-        existing_files = {}
+    try: existing_files = {f.display_name: f for f in genai.list_files()}
+    except: existing_files = {}
 
     for filename in files:
         if not os.path.exists(filename): continue
-        
-        # LOGIC: If exists, try to get it. If 403 error, Re-Upload it.
         if filename in existing_files:
             try:
-                # Try accessing the file to check permissions
+                # Check permission (Fixes 403)
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
             except Exception:
-                # Permission denied (403) or missing -> Re-upload
                 try:
                     ref = genai.upload_file(filename, display_name=filename)
-                    while ref.state.name == "PROCESSING":
-                        time.sleep(1)
-                        ref = genai.get_file(ref.name)
+                    while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
                     loaded.append(ref)
                 except: pass
         else:
-            # New upload
             try:
                 ref = genai.upload_file(filename, display_name=filename)
-                while ref.state.name == "PROCESSING":
-                    time.sleep(1)
-                    ref = genai.get_file(ref.name)
+                while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
                 loaded.append(ref)
             except: pass
-            
     return loaded
 
 with st.spinner("⚡ Starting Engine 3.0..."):
@@ -422,12 +421,11 @@ except:
     except:
         model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 13. CHAT LOGIC (CLOUD UPLOAD BUTTON) ---
+# --- 13. CHAT LOGIC (CLOUD BUTTON) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
 
-# --- CLOUD UPLOAD BUTTON POSITIONED HERE ---
 col1, col2 = st.columns([0.25, 0.75]) 
 with col1:
     with st.popover("☁️ Upload (Max 200MB)", use_container_width=True):
@@ -444,13 +442,11 @@ with col1:
                 up_img = True
             else: up_content = up_file.getvalue().decode("utf-8")
 
-# --- GENERATOR HELPER FOR ST.WRITE_STREAM ---
+# --- GENERATOR HELPER ---
 def stream_parser(stream):
-    """Yields text from the Gemini response stream safely."""
     for chunk in stream:
         try:
-            if chunk.text:
-                yield chunk.text
+            if chunk.text: yield chunk.text
         except: pass
 
 if prompt := st.chat_input(f"Innovate here..."):
@@ -463,7 +459,7 @@ if prompt := st.chat_input(f"Innovate here..."):
     
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
-    # Response with ACTIVE STATUS + STREAMING
+    # Response with ANIMATED WAITING
     with st.chat_message("assistant"):
         try:
             messages_for_api = []
@@ -484,24 +480,32 @@ if prompt := st.chat_input(f"Innovate here..."):
                 else:
                       messages_for_api.append({"role": role, "parts": [msg["content"]]})
 
-            # --- 1. SHOW ACTIVITY LOG (Active Waiting UI) ---
+            # --- ANIMATED "THINKING" LOOP ---
             with st.status("🧠 **Starting Innovation Engine...**", expanded=True) as status:
-                st.write("🔍 Analyzing your request...")
-                time.sleep(0.3) # Fake tiny delay for UI feel
-                st.write("📖 Consulting Flavor Bible & Trends...")
-                time.sleep(0.3)
-                st.write("🍹 Drafting creative concepts...")
+                status_placeholder = st.empty()
                 
-                # Call API
+                # Dynamic Loop: Changes text every 0.4s to look "Active"
+                loading_texts = [
+                    "🔍 Analyzing your request...",
+                    "📖 Opening Flavor Bible...",
+                    "🧪 Checking ingredient compatibility...",
+                    "🎨 Drafting creative concepts...",
+                    "✨ Polishing the final list..."
+                ]
+                
+                for text in loading_texts:
+                    # 'pulsing-text' class comes from our custom CSS
+                    status_placeholder.markdown(f"<p class='pulsing-text'>{text}</p>", unsafe_allow_html=True)
+                    time.sleep(0.4) 
+                
+                # Start API (while loop runs)
                 response_stream = model.generate_content(messages_for_api, stream=True)
                 
-                # Update status to complete
-                status.update(label="✅ **Ideas Generated!**", state="complete", expanded=False)
+                status.update(label="✅ **Innovation Complete!**", state="complete", expanded=False)
 
-            # --- 2. NATIVE STREAMING ---
+            # --- NATIVE STREAMING ---
             full_response = st.write_stream(stream_parser(response_stream))
             
-            # --- 3. SAVE ---
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
             save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
             
