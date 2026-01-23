@@ -480,7 +480,34 @@ if prompt := st.chat_input(f"Innovate here..."):
             # --- 2. NATIVE STREAMLIT STREAMING (The Fix) ---
             # st.write_stream handles the visual typing effect automatically and perfectly.
             # It also returns the full string at the end for us to save.
-            full_response = st.write_stream(stream_parser(response_stream))
+            placeholder = st.empty()
+            full_response = ""
+            buffer = ""
+            
+            for chunk in response_stream:
+                try:
+                    if chunk.text:
+                        buffer += chunk.text
+            
+                        # Split by lines so user sees progress
+                        lines = buffer.split("\n")
+                        
+                        # Keep last partial line in buffer
+                        buffer = lines.pop()  
+            
+                        for line in lines:
+                            full_response += line + "\n"
+                            placeholder.markdown(full_response)
+                            time.sleep(0.03)  # typing feel (optional)
+            
+                except:
+                    pass
+            
+            # Flush remaining buffer
+            if buffer:
+                full_response += buffer
+                placeholder.markdown(full_response)
+
             
             # --- 3. SAVE ---
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
@@ -493,3 +520,4 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
