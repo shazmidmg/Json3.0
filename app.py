@@ -15,23 +15,19 @@ st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_s
 # --- 2. CSS STYLING (CLEAN UI) ---
 st.markdown("""
 <style>
-    /* 1. HIDE STREAMLIT FOOTER & WATERMARK */
+    /* HIDE STREAMLIT FOOTER & WATERMARK */
     footer {visibility: hidden !important; height: 0px !important;}
     #MainMenu {visibility: hidden !important; display: none !important;}
     
-    /* 2. HIDE TOP RIGHT MENU (Fork, GitHub, Settings) */
+    /* HIDE TOP RIGHT MENU */
     [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
-    
-    /* 3. HIDE COLORED HEADER BAR */
     [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
-
-    /* 4. HIDE DEPLOY BUTTON */
     .stDeployButton {visibility: hidden !important; display: none !important;}
     
-    /* 5. KEEP HEADER VISIBLE FOR MOBILE ARROW, BUT TRANSPARENT */
+    /* HEADER TRANSPARENCY */
     header {visibility: visible !important; background-color: transparent !important;}
 
-    /* TITLES */
+    /* TYPOGRAPHY */
     h1, h2, h3 { text-align: left !important; }
 
     /* SIDEBAR BUTTONS */
@@ -64,7 +60,7 @@ st.markdown("""
     div.stButton > button[kind="primary"]:hover {
         background-color: #c8e6c9 !important;
     }
-    /* DANGER BUTTONS (Red) */
+    /* DANGER BUTTONS */
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(2) button,
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(3) button {
         background-color: #ffebee !important;
@@ -117,7 +113,7 @@ if "GEMINI_API_KEY" in st.secrets:
 # --- 5. SMART TITLE GENERATOR ---
 def get_smart_title(user_text):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash") # Use 1.5 for cheap/fast background tasks
+        model = genai.GenerativeModel("gemini-1.5-flash") 
         response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
         return response.text.strip().replace('"', '').replace("Title:", "")
     except:
@@ -168,7 +164,7 @@ def format_chat_log(session_name, messages):
         log_text += f"[{role}]:\n{msg['content']}\n\n{'-'*40}\n\n"
     return log_text
 
-# --- ⚡ SPEED BOOST: NON-BLOCKING SAVE ---
+# --- ⚡ BACKGROUND SAVE ---
 def _save_task(session_id, role, content):
     if sheet:
         try:
@@ -391,7 +387,7 @@ except:
         # FALLBACK: Gemini 1.5 Flash (Stable)
         model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 13. CHAT LOGIC (VISUAL STREAMING FIXED) ---
+# --- 13. CHAT LOGIC (FORCED TYPING EFFECT) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -420,11 +416,13 @@ if prompt := st.chat_input(f"Innovate here..."):
     # --- NON-BLOCKING SAVE (INSTANT) ---
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
-    # Response with SMOOTH STREAMING
+    # Response with FORCED STREAMING
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
-        full_response = ""
+        # Initial Placeholder to show activity immediately
+        message_placeholder.markdown("🧠 *Generating ideas...*")
         
+        full_response = ""
         try:
             messages_for_api = []
             if knowledge_base:
@@ -447,12 +445,15 @@ if prompt := st.chat_input(f"Innovate here..."):
             # --- START STREAMING ---
             response_stream = model.generate_content(messages_for_api, stream=True)
             
-            # --- THE MAGIC LOOP ---
+            # --- THE MAGIC LOOP WITH ARTIFICIAL DELAY ---
             for chunk in response_stream:
                 if chunk.text:
                     full_response += chunk.text
-                    # This updates the UI repeatedly, creating the "Typing" effect
+                    # This forces the browser to refresh the UI
                     message_placeholder.markdown(full_response + "▌")
+                    # ⚠️ SMALL SLEEP: Forces the 'typing' effect to be visible to the human eye
+                    # 0.02s is barely noticeable but enough to prevent the "bulk dump" effect
+                    time.sleep(0.02) 
             
             # --- FINAL RENDER (Remove cursor) ---
             message_placeholder.markdown(full_response)
