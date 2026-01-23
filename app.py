@@ -426,8 +426,6 @@ with col1:
     # Stylized Popover Button to look like a "Cloud"
     with st.popover("☁️ Upload (Max 200MB)", use_container_width=True):
         st.markdown("### ☁️ Upload Knowledge")
-        st.caption("Supported: PNG, JPG, CSV, TXT")
-        st.caption(" **Max Limit:** 200MB per file")
         up_file = st.file_uploader("Drop files here", type=["png", "jpg", "csv", "txt"], label_visibility="collapsed")
         up_content, up_img = None, False
         if up_file:
@@ -494,3 +492,4 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
