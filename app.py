@@ -4,12 +4,11 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from PIL import Image
-import os
 import time
 import threading
 
 # =====================================================
-# 1. CONFIGURATION
+# 1. PAGE CONFIG
 # =====================================================
 st.set_page_config(
     page_title="Beverage Innovator 3.0",
@@ -18,17 +17,18 @@ st.set_page_config(
 )
 
 # =====================================================
-# 2. SECURITY GATE
+# 2. SECURITY
 # =====================================================
 def check_password():
-    if st.session_state.get("password_correct", False):
+    if st.session_state.get("password_correct"):
         return True
 
     st.markdown("<h1>🔒 Innovator Access</h1>", unsafe_allow_html=True)
     password = st.text_input("Enter Password", type="password")
+
     if st.button("Login"):
         if password == st.secrets["APP_PASSWORD"]:
-            st.session_state["password_correct"] = True
+            st.session_state.password_correct = True
             st.rerun()
         else:
             st.error("❌ Incorrect Password")
@@ -38,7 +38,7 @@ if not check_password():
     st.stop()
 
 # =====================================================
-# 3. GOOGLE SHEETS CONNECTION
+# 3. GOOGLE SHEETS
 # =====================================================
 @st.cache_resource
 def connect_to_db():
@@ -72,10 +72,10 @@ def save_to_sheet_background(session_id, role, content):
         except:
             pass
 
-    threading.Thread(target=task).start()
+    threading.Thread(target=task, daemon=True).start()
 
 # =====================================================
-# 4. GEMINI CONFIG
+# 4. GEMINI SETUP
 # =====================================================
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
@@ -85,56 +85,19 @@ You are the Talented Drink Innovation Manager at Monin Malaysia.
 Context:
 - Attached in your knowledgebase is the flavour bible, and a few past case studies, keep these in mind.
 - You are very good at crafting creative drinks that are also commercially suitable for the cafe's/business' audience.
-- During the discover session, the user will share a catalog containing all of Monin's products.
 
 Intent:
 - To help the user achieve a certain objective for the cafe/business through crafting innovative drink ideas that will trend instantly.
 
-Discovery Session (Proactive Mode):
-- **STEP 1: ANALYZE.** Look at the user's input.
-- **STEP 2: CHECK MISSING INFO.**
-  - Cafe Name/Location?
-  - Objective/Direction?
-  - Category (Artisanal, Chain, Restaurant)?
-- **STEP 3: HYBRID RESPONSE.**
-  - Acknowledge enthusiasm.
-  - Ask missing questions.
-  - Provide "Immediate Inspiration" (5 ideas for ALL 3 categories).
-  - Provide "Next Step" prompts.
+Discovery Session:
+- Analyze input
+- Check missing info
+- Provide inspiration + next steps
 
-VISUAL FORMATTING PROTOCOL (STRICT):
-1. **HUGE TITLES:** Use Markdown Header 2 (`##`) for every Category Title.
-2. **CLEAN LISTS:** Use standard numbered lists (`1. `, `2. `).
-3. **SPACING:** Ensure every numbered item is on its own line.
-4. **BOLDING:** Bold the Drink Name.
-
-Correct Visual Output Example:
-
-## Category 1: Traditional (Refined & Timeless)
-1. **Idea One**: Description here.
-2. **Idea Two**: Description here.
-3. **Idea Three**: Description here.
-4. **Idea Four**: Description here.
-5. **Idea Five**: Description here.
-
-## Category 2: Modern Heritage (Malaysian Soul, Modern Twist)
-6. **Idea Six**: Description here.
-7. **Idea Seven**: Description here.
-8. **Idea Eight**: Description here.
-9. **Idea Nine**: Description here.
-10. **Idea Ten**: Description here.
-
-## Category 3: Crazy (Avant-Garde & Experimental)
-11. **Idea Eleven**: Description here.
-12. **Idea Twelve**: Description here.
-13. **Idea Thirteen**: Description here.
-14. **Idea Fourteen**: Description here.
-15. **Idea Fifteen**: Description here.
-
-End every response by offering to:
-- expand ideas
-- combine flavours
-- or provide full recipes
+VISUAL FORMAT:
+- Use ## headers
+- Numbered lists
+- Bold drink names
 """
 
 model = genai.GenerativeModel(
@@ -143,27 +106,52 @@ model = genai.GenerativeModel(
 )
 
 # =====================================================
-# 5. SESSION STATE
+# 5. SESSION STATE INIT
 # =====================================================
 if "chat_sessions" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
-    st.session_state.active_session_id = "Session 1"
+    st.session_state.active_session = "Session 1"
+    st.session_state.session_counter = 1
 
 # =====================================================
-# 6. DISPLAY CHAT HISTORY
+# 6. SIDEBAR (HISTORY)
+# =====================================================
+with st.sidebar:
+    st.header("🗂️ Chat History")
+
+    if st.button("➕ New Chat", use_container_width=True):
+        st.session_state.session_counter += 1
+        sid = f"Session {st.session_state.session_counter}"
+        st.session_state.chat_sessions[sid] = []
+        st.session_state.active_session = sid
+        st.rerun()
+
+    st.divider()
+
+    for sid in reversed(st.session_state.chat_sessions.keys()):
+        active = sid == st.session_state.active_session
+        if st.button(
+            ("🟢 " if active else "") + sid,
+            use_container_width=True
+        ):
+            st.session_state.active_session = sid
+            st.rerun()
+
+# =====================================================
+# 7. MAIN CHAT DISPLAY
 # =====================================================
 for msg in st.session_state.chat_sessions[
-    st.session_state.active_session_id
+    st.session_state.active_session
 ]:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
 # =====================================================
-# 7. FILE UPLOAD
+# 8. FILE UPLOAD
 # =====================================================
 up_file = st.file_uploader(
     "Attach file (optional)",
-    type=["png", "jpg", "csv", "txt"]
+    type=["png", "jpg", "txt", "csv"]
 )
 
 up_content, up_img = None, False
@@ -175,57 +163,55 @@ if up_file:
         up_content = up_file.getvalue().decode("utf-8")
 
 # =====================================================
-# 8. CHAT INPUT + STREAMING RESPONSE
+# 9. CHAT INPUT + STREAMING
 # =====================================================
 if prompt := st.chat_input("Innovate here..."):
 
-    # USER MESSAGE
+    # ---- USER MESSAGE ----
     st.session_state.chat_sessions[
-        st.session_state.active_session_id
+        st.session_state.active_session
     ].append({"role": "user", "content": prompt})
 
     with st.chat_message("user"):
         st.markdown(prompt)
 
     save_to_sheet_background(
-        st.session_state.active_session_id,
+        st.session_state.active_session,
         "user",
         prompt
     )
 
-    # ASSISTANT MESSAGE
+    # ---- ASSISTANT MESSAGE ----
     with st.chat_message("assistant"):
 
-        # ---------- PHASE 1: THINKING ----------
-        thinking_placeholder = st.empty()
-        thinking_steps = [
+        # PHASE 1 — THINKING
+        thinking = st.empty()
+        steps = [
             "🧠 Thinking…",
             "🔍 Reviewing flavour bible…",
-            "📊 Analysing café objectives…",
+            "📊 Analysing objectives…",
             "✨ Crafting drink concepts…"
         ]
 
-        thinking_placeholder.markdown(thinking_steps[0])
-        for step in thinking_steps[1:]:
+        thinking.markdown(steps[0])
+        for s in steps[1:]:
             time.sleep(0.6)
-            thinking_placeholder.markdown(step)
+            thinking.markdown(s)
 
-        # ---------- PREPARE INPUT ----------
-        messages_for_api = [{"role": "user", "parts": [prompt]}]
-
+        # PREPARE INPUT
+        parts = [prompt]
         if up_content:
-            messages_for_api[0]["parts"].append(up_content)
+            parts.append(up_content)
             if up_img:
-                messages_for_api[0]["parts"].append("Analyse this image.")
+                parts.append("Analyse this image.")
 
-        # ---------- CALL GEMINI ----------
         response_stream = model.generate_content(
-            messages_for_api,
+            [{"role": "user", "parts": parts}],
             stream=True
         )
 
-        # ---------- PHASE 2: LINE-BY-LINE STREAM ----------
-        thinking_placeholder.empty()
+        # PHASE 2 — LINE-BY-LINE STREAM
+        thinking.empty()
 
         placeholder = st.empty()
         full_response = ""
@@ -249,13 +235,13 @@ if prompt := st.chat_input("Innovate here..."):
             full_response += buffer
             placeholder.markdown(full_response)
 
-        # ---------- SAVE ----------
+        # SAVE
         st.session_state.chat_sessions[
-            st.session_state.active_session_id
+            st.session_state.active_session
         ].append({"role": "assistant", "content": full_response})
 
         save_to_sheet_background(
-            st.session_state.active_session_id,
+            st.session_state.active_session,
             "assistant",
             full_response
         )
