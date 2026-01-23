@@ -11,29 +11,39 @@ import pandas as pd
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (CLEAN UI FIX) ---
+# --- 2. CSS STYLING (SURGICAL FIX) ---
 st.markdown("""
 <style>
-    /* 1. HIDE THE STREAMLIT FOOTER ("Built with Streamlit") */
+    /* 1. HIDE FOOTER ("Built with Streamlit") */
     footer {
         visibility: hidden !important;
-        display: none !important;
+        height: 0px !important;
     }
     
-    /* 2. HIDE THE TOP RIGHT MENU ("Fork", "Deploy", "GitHub", "Settings") */
+    /* 2. HIDE TOP RIGHT MENU (Fork, GitHub, Settings) */
+    /* We hide the toolbar specifically, NOT the whole header */
     [data-testid="stToolbar"] {
         visibility: hidden !important;
         display: none !important;
     }
     
-    /* 3. HIDE THE COLORED TOP DECORATION BAR */
-    header {
-        background-color: transparent !important;
+    /* 3. HIDE THE COLORED DECORATION BAR AT TOP */
+    [data-testid="stDecoration"] {
+        visibility: hidden !important;
+        display: none !important;
+    }
+
+    /* 4. HIDE DEPLOY BUTTON */
+    .stDeployButton {
+        visibility: hidden !important;
+        display: none !important;
     }
     
-    /* 4. HIDE DEPLOY BUTTON SPECIFICALLY */
-    .stDeployButton {
-        display: none !important;
+    /* 5. ENSURE HEADER IS VISIBLE (For Mobile Arrow) */
+    /* We do NOT hide the header itself, just the stuff inside it we don't want */
+    header {
+        visibility: visible !important;
+        background-color: transparent !important;
     }
 
     /* TITLES */
