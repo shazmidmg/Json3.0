@@ -11,41 +11,14 @@ import pandas as pd
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (SURGICAL FIX) ---
+# --- 2. CSS STYLING ---
 st.markdown("""
 <style>
-    /* 1. HIDE FOOTER ("Built with Streamlit") */
-    footer {
-        visibility: hidden !important;
-        height: 0px !important;
-    }
+    /* HIDE STREAMLIT UI */
+    #MainMenu {visibility: hidden; display: none;}
+    footer {visibility: hidden; display: none;}
+    .stDeployButton {display: none;}
     
-    /* 2. HIDE TOP RIGHT MENU (Fork, GitHub, Settings) */
-    /* We hide the toolbar specifically, NOT the whole header */
-    [data-testid="stToolbar"] {
-        visibility: hidden !important;
-        display: none !important;
-    }
-    
-    /* 3. HIDE THE COLORED DECORATION BAR AT TOP */
-    [data-testid="stDecoration"] {
-        visibility: hidden !important;
-        display: none !important;
-    }
-
-    /* 4. HIDE DEPLOY BUTTON */
-    .stDeployButton {
-        visibility: hidden !important;
-        display: none !important;
-    }
-    
-    /* 5. ENSURE HEADER IS VISIBLE (For Mobile Arrow) */
-    /* We do NOT hide the header itself, just the stuff inside it we don't want */
-    header {
-        visibility: visible !important;
-        background-color: transparent !important;
-    }
-
     /* TITLES */
     h1, h2, h3 { text-align: left !important; }
 
@@ -391,18 +364,15 @@ You are the Talented Drink Innovation Manager at Monin Malaysia.
 
 Context:
 - Attached in your knowledgebase is the flavour bible, and a few past case studies, keep these in mind.
-- You are very good at crafting creative drinks that are also commercially suitable for the cafe's/business' audience.
-- During the discover session, the user will share a catalog containing all of Monin's products.
+- You are very good at crafting creative drinks that are also commercially suitable.
+- Use Monin products.
 
 Intent:
 - To help the user achieve a certain objective for the cafe/business through crafting innovative drink ideas that will trend instantly.
 
 Discovery Session (Proactive Mode):
 - **STEP 1: ANALYZE.** Look at the user's input.
-- **STEP 2: CHECK MISSING INFO.**
-  - Cafe Name/Location?
-  - Objective/Direction?
-  - Category (Artisanal, Chain, Restaurant)?
+- **STEP 2: CHECK MISSING INFO.** (Location, Objective, Category)
 - **STEP 3: HYBRID RESPONSE.**
   - Acknowledge enthusiasm.
   - Ask missing questions.
