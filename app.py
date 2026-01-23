@@ -12,7 +12,7 @@ import threading
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (CLEAN UI + CLOUD BUTTON) ---
+# --- 2. CSS STYLING (CLEAN UI) ---
 st.markdown("""
 <style>
     /* HIDE STREAMLIT FOOTER & WATERMARK */
@@ -41,7 +41,7 @@ st.markdown("""
     }
     [data-testid="stSidebar"] .stButton > button > div { text-align: left !important; }
 
-    /* GENERAL BUTTON COLORS */
+    /* BUTTON COLORS */
     div.stButton > button {
         background-color: transparent !important;
         color: #e0e0e0 !important;
@@ -52,8 +52,6 @@ st.markdown("""
         border-color: #808080 !important;
         color: #ffffff !important;
     }
-    
-    /* PRIMARY (GREEN) */
     div.stButton > button[kind="primary"] {
         background-color: #e8f5e9 !important;
         color: #2e7d32 !important;
@@ -62,7 +60,6 @@ st.markdown("""
     div.stButton > button[kind="primary"]:hover {
         background-color: #c8e6c9 !important;
     }
-    
     /* DANGER BUTTONS */
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(2) button,
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(3) button {
@@ -71,10 +68,9 @@ st.markdown("""
         border: 1px solid #c62828 !important;
     }
 
-    /* --- CLOUD UPLOAD BUTTON STYLE --- */
-    /* Target the popover button in the main area (not sidebar) */
+    /* CLOUD UPLOAD BUTTON STYLE */
     div[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"] {
-        border-radius: 25px !important; /* Cloud shape */
+        border-radius: 25px !important;
         border: 1px dashed #90caf9 !important;
         color: #90caf9 !important;
         background-color: rgba(144, 202, 249, 0.1) !important;
@@ -315,28 +311,39 @@ def load_knowledge_base():
     loaded = []
     
     try:
+        # Get list of existing files
         existing_files = {f.display_name: f for f in genai.list_files()}
     except:
         existing_files = {}
 
     for filename in files:
         if not os.path.exists(filename): continue
+        
+        # LOGIC: If exists, try to get it. If 403 error, Re-Upload it.
         if filename in existing_files:
             try:
+                # Try accessing the file to check permissions
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
-            except:
+            except Exception:
+                # Permission denied (403) or missing -> Re-upload
                 try:
                     ref = genai.upload_file(filename, display_name=filename)
-                    while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
+                    while ref.state.name == "PROCESSING":
+                        time.sleep(1)
+                        ref = genai.get_file(ref.name)
                     loaded.append(ref)
                 except: pass
         else:
+            # New upload
             try:
                 ref = genai.upload_file(filename, display_name=filename)
-                while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
+                while ref.state.name == "PROCESSING":
+                    time.sleep(1)
+                    ref = genai.get_file(ref.name)
                 loaded.append(ref)
             except: pass
+            
     return loaded
 
 with st.spinner("⚡ Starting Engine 3.0..."):
@@ -423,7 +430,6 @@ for m in curr_msgs:
 # --- CLOUD UPLOAD BUTTON POSITIONED HERE ---
 col1, col2 = st.columns([0.25, 0.75]) 
 with col1:
-    # Stylized Popover Button to look like a "Cloud"
     with st.popover("☁️ Upload (Max 200MB)", use_container_width=True):
         st.markdown("### ☁️ Upload Knowledge")
         st.caption("Supported: PNG, JPG, CSV, TXT")
@@ -457,7 +463,7 @@ if prompt := st.chat_input(f"Innovate here..."):
     
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
-    # Response with NATIVE STREAMING
+    # Response with ACTIVE STATUS + STREAMING
     with st.chat_message("assistant"):
         try:
             messages_for_api = []
@@ -478,12 +484,24 @@ if prompt := st.chat_input(f"Innovate here..."):
                 else:
                       messages_for_api.append({"role": role, "parts": [msg["content"]]})
 
-            with st.spinner("🧠 Thinking..."):
+            # --- 1. SHOW ACTIVITY LOG (Active Waiting UI) ---
+            with st.status("🧠 **Starting Innovation Engine...**", expanded=True) as status:
+                st.write("🔍 Analyzing your request...")
+                time.sleep(0.3) # Fake tiny delay for UI feel
+                st.write("📖 Consulting Flavor Bible & Trends...")
+                time.sleep(0.3)
+                st.write("🍹 Drafting creative concepts...")
+                
+                # Call API
                 response_stream = model.generate_content(messages_for_api, stream=True)
-            
-            # Use Native Streamlit Streaming for best compatibility
+                
+                # Update status to complete
+                status.update(label="✅ **Ideas Generated!**", state="complete", expanded=False)
+
+            # --- 2. NATIVE STREAMING ---
             full_response = st.write_stream(stream_parser(response_stream))
             
+            # --- 3. SAVE ---
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
             save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
             
