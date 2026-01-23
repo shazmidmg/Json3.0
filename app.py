@@ -15,17 +15,23 @@ st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_s
 # --- 2. CSS STYLING (CLEAN UI) ---
 st.markdown("""
 <style>
-    /* HIDE STREAMLIT UI ELEMENTS */
+    /* 1. HIDE STREAMLIT FOOTER & WATERMARK */
     footer {visibility: hidden !important; height: 0px !important;}
     #MainMenu {visibility: hidden !important; display: none !important;}
+    
+    /* 2. HIDE TOP RIGHT MENU (Fork, GitHub, Settings) */
     [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+    
+    /* 3. HIDE COLORED HEADER BAR */
     [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
+
+    /* 4. HIDE DEPLOY BUTTON */
     .stDeployButton {visibility: hidden !important; display: none !important;}
     
-    /* HEADER TRANSPARENCY (Keeps sidebar arrow visible) */
+    /* 5. KEEP HEADER VISIBLE FOR MOBILE ARROW, BUT TRANSPARENT */
     header {visibility: visible !important; background-color: transparent !important;}
 
-    /* TYPOGRAPHY */
+    /* TITLES */
     h1, h2, h3 { text-align: left !important; }
 
     /* SIDEBAR BUTTONS */
@@ -58,8 +64,7 @@ st.markdown("""
     div.stButton > button[kind="primary"]:hover {
         background-color: #c8e6c9 !important;
     }
-    
-    /* DANGER BUTTONS */
+    /* DANGER BUTTONS (Red) */
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(2) button,
     [data-testid="stSidebar"] div.stButton:nth-last-of-type(3) button {
         background-color: #ffebee !important;
@@ -93,7 +98,7 @@ if not check_password():
 #  ✅ APP LOGIC STARTS HERE
 # ==========================================
 
-# --- 4. DATABASE CONNECTION (THREADED) ---
+# --- 4. OPTIMIZED DATABASE CONNECTION ---
 @st.cache_resource
 def connect_to_db():
     try:
@@ -109,16 +114,16 @@ sheet = connect_to_db()
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-# --- 5. UTILS ---
+# --- 5. SMART TITLE GENERATOR ---
 def get_smart_title(user_text):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash") 
+        model = genai.GenerativeModel("gemini-1.5-flash") # Use 1.5 for cheap/fast background tasks
         response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
         return response.text.strip().replace('"', '').replace("Title:", "")
     except:
         return (user_text[:25] + "..") if len(user_text) > 25 else user_text
 
-# --- 6. HISTORY ---
+# --- 6. HISTORY LOADER ---
 if "history_loaded" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
     st.session_state.session_titles = {"Session 1": "New Chat"}
@@ -154,6 +159,7 @@ if "history_loaded" not in st.session_state:
         except: st.session_state.history_loaded = True
     else: st.session_state.history_loaded = True
 
+# --- 7. HELPER FUNCTIONS ---
 def format_chat_log(session_name, messages):
     log_text = f"--- LOG: {session_name} ---\nDate: {datetime.now()}\n\n"
     if not messages: return log_text + "(Empty)"
@@ -162,7 +168,7 @@ def format_chat_log(session_name, messages):
         log_text += f"[{role}]:\n{msg['content']}\n\n{'-'*40}\n\n"
     return log_text
 
-# --- ⚡ BACKGROUND SAVE ---
+# --- ⚡ SPEED BOOST: NON-BLOCKING SAVE ---
 def _save_task(session_id, role, content):
     if sheet:
         try:
@@ -176,7 +182,9 @@ def save_to_sheet_background(session_id, role, content):
 
 def clear_google_sheet():
     if sheet:
-        try: sheet.clear(); sheet.append_row(["Timestamp", "Session ID", "Role", "Content"])
+        try:
+            sheet.clear()
+            sheet.append_row(["Timestamp", "Session ID", "Role", "Content"])
         except Exception as e: st.error(f"DB Error: {e}")
 
 def delete_session_from_db(session_id):
@@ -186,7 +194,8 @@ def delete_session_from_db(session_id):
             if not all_rows: return
             header = all_rows[0]
             new_rows = [row for row in all_rows[1:] if len(row) > 1 and row[1] != session_id]
-            sheet.clear(); sheet.append_row(header)
+            sheet.clear()
+            sheet.append_row(header)
             if new_rows: sheet.update(range_name='A2', values=new_rows)
         except Exception as e: st.error(f"DB Error: {e}")
 
@@ -218,6 +227,7 @@ with st.sidebar:
                 st.rerun()
 
     st.divider()
+    
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Log_{st.session_state.active_session_id}.txt", use_container_width=True)
@@ -284,7 +294,7 @@ with col_logo:
     except: st.header("🍹")
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
-# --- 10. KNOWLEDGE BASE ---
+# --- 10. KNOWLEDGE BASE (SMART CACHING) ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
@@ -367,15 +377,18 @@ Would you like me to expand on any ideas, combine any flavors, or provide the re
 3. I want to finalise Idea 1, Idea 6 and Idea 12 as my drink ideas, kindly give me the recipe for these ideas.
 """
 
-# --- 12. MODEL SELECTOR ---
+# --- 12. MODEL SELECTOR (GEMINI 3 PRIORITY) ---
 try:
+    # PRIORITY 1: The New Gemini 3 Flash Preview
     model = genai.GenerativeModel("gemini-3-flash-preview", system_instruction=HIDDEN_PROMPT)
     st.toast("🚀 Running on Gemini 3 Flash Preview!")
 except:
     try:
+        # PRIORITY 2: The Fast Gemini 2.0 Flash
         model = genai.GenerativeModel("gemini-2.0-flash-exp", system_instruction=HIDDEN_PROMPT)
         st.toast("⚡ Running on Gemini 2.0 Flash")
     except:
+        # FALLBACK: Gemini 1.5 Flash (Stable)
         model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
 # --- 13. CHAT LOGIC (VISUAL STREAMING FIXED) ---
@@ -404,16 +417,14 @@ if prompt := st.chat_input(f"Innovate here..."):
         st.markdown(prompt)
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
     
+    # --- NON-BLOCKING SAVE (INSTANT) ---
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
     # Response with SMOOTH STREAMING
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
-        
-        # 1. SHOW "THINKING" (So user knows it's alive)
-        message_placeholder.markdown("🧠 *Thinking...*") 
-        
         full_response = ""
+        
         try:
             messages_for_api = []
             if knowledge_base:
@@ -433,20 +444,21 @@ if prompt := st.chat_input(f"Innovate here..."):
                 else:
                       messages_for_api.append({"role": role, "parts": [msg["content"]]})
 
-            # 2. START STREAMING
+            # --- START STREAMING ---
             response_stream = model.generate_content(messages_for_api, stream=True)
             
-            # 3. STREAM LOOP
+            # --- THE MAGIC LOOP ---
             for chunk in response_stream:
                 if chunk.text:
                     full_response += chunk.text
-                    # The ▌ character creates the "typing" cursor effect
+                    # This updates the UI repeatedly, creating the "Typing" effect
                     message_placeholder.markdown(full_response + "▌")
             
-            # 4. FINAL RENDER (Remove cursor)
+            # --- FINAL RENDER (Remove cursor) ---
             message_placeholder.markdown(full_response)
             
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
+            # --- NON-BLOCKING SAVE (INSTANT) ---
             save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
             
         except Exception as e:
