@@ -1,9 +1,12 @@
 import streamlit as st
 import google.generativeai as genai
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from PIL import Image
 import os
 import time
+import pandas as pd
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
@@ -11,7 +14,7 @@ st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_s
 # --- 2. CSS STYLING ---
 st.markdown("""
 <style>
-    /* HIDE STREAMLIT UI */
+    /* HIDE STREAMLIT UI - BUT KEEP HEADER VISIBLE FOR MOBILE SIDEBAR ARROW */
     #MainMenu {visibility: hidden; display: none;}
     footer {visibility: hidden; display: none;}
     .stDeployButton {display: none;}
@@ -101,18 +104,26 @@ if not check_password():
 #  ✅ APP LOGIC STARTS HERE
 # ==========================================
 
-# --- 4. API CONFIGURATION (NO SHEETS!) ---
+# --- 4. OPTIMIZED DATABASE CONNECTION ---
+@st.cache_resource
+def connect_to_db():
+    try:
+        if "gcp_service_account" in st.secrets:
+            scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+            client = gspread.authorize(creds)
+            sheet = client.open("JSON 3.0 Logs").sheet1
+            return sheet
+    except Exception as e:
+        return None
+
+sheet = connect_to_db()
+
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-# --- 5. INITIALIZE RAM MEMORY ---
-if "chat_sessions" not in st.session_state:
-    st.session_state.chat_sessions = {"Session 1": []}
-    st.session_state.session_titles = {"Session 1": "New Chat"}
-    st.session_state.active_session_id = "Session 1"
-    st.session_state.session_counter = 1
-
-# --- 6. SMART TITLE GENERATOR ---
+# --- 5. SMART TITLE GENERATOR ---
 def get_smart_title(user_text):
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
@@ -120,6 +131,53 @@ def get_smart_title(user_text):
         return response.text.strip().replace('"', '').replace("Title:", "")
     except:
         return (user_text[:25] + "..") if len(user_text) > 25 else user_text
+
+# --- 6. HYBRID SYNC HISTORY LOADER ---
+# Only loads from Google Sheet ONCE per session. 
+# Afterward, it uses RAM for speed.
+if "history_loaded" not in st.session_state:
+    st.session_state.chat_sessions = {"Session 1": []}
+    st.session_state.session_titles = {"Session 1": "New Chat"}
+    st.session_state.active_session_id = "Session 1"
+    st.session_state.session_counter = 1
+    
+    if sheet:
+        try:
+            with st.spinner("🔄 Syncing History..."):
+                data = sheet.get_all_values()
+                if len(data) > 1:
+                    rebuilt = {}
+                    titles = {}
+                    max_num = 1
+                    temp_first_msgs = {} 
+
+                    for row in data[1:]: 
+                        if len(row) >= 4:
+                            ts, sid, role, txt = row[0], row[1], row[2], row[3]
+                            if sid not in rebuilt: rebuilt[sid] = []
+                            rebuilt[sid].append({"role": role, "content": txt})
+                            
+                            if role == "user" and sid not in temp_first_msgs:
+                                temp_first_msgs[sid] = txt
+                            
+                            try:
+                                n = int(sid.replace("Session ", ""))
+                                if n > max_num: max_num = n
+                            except: pass
+                    
+                    for sid, first_msg in temp_first_msgs.items():
+                        titles[sid] = get_smart_title(first_msg)
+
+                    if rebuilt:
+                        st.session_state.chat_sessions = rebuilt
+                        st.session_state.session_titles = titles
+                        st.session_state.session_counter = max_num
+                        st.session_state.active_session_id = list(rebuilt.keys())[-1]
+            st.session_state.history_loaded = True
+        except: 
+            st.session_state.history_loaded = True # Fail gracefully
+    else:
+        st.session_state.history_loaded = True
 
 # --- 7. HELPER FUNCTIONS ---
 def format_chat_log(session_name, messages):
@@ -130,15 +188,45 @@ def format_chat_log(session_name, messages):
         log_text += f"[{role}]:\n{msg['content']}\n\n{'-'*40}\n\n"
     return log_text
 
+def save_to_sheet_background(session_id, role, content):
+    """Fire-and-forget save to keep UI fast"""
+    if sheet:
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            sheet.append_row([timestamp, session_id, role, content])
+        except: pass
+
+def clear_google_sheet():
+    if sheet:
+        try:
+            sheet.clear()
+            sheet.append_row(["Timestamp", "Session ID", "Role", "Content"])
+        except Exception as e:
+            st.error(f"Failed to clear database: {e}")
+
+def delete_session_from_db(session_id):
+    if sheet:
+        try:
+            all_rows = sheet.get_all_values()
+            if not all_rows: return
+            header = all_rows[0]
+            data_rows = all_rows[1:]
+            new_rows = [row for row in data_rows if len(row) > 1 and row[1] != session_id]
+            sheet.clear()
+            sheet.append_row(header)
+            if new_rows:
+                sheet.update(range_name='A2', values=new_rows)
+        except Exception as e:
+            st.error(f"Error removing from DB: {e}")
+
 # --- 8. SIDEBAR ---
 with st.sidebar:
     st.header("🗄️ History")
     
-    # State Managers
     if "confirm_wipe" not in st.session_state: st.session_state.confirm_wipe = False
     if "confirm_del_chat" not in st.session_state: st.session_state.confirm_del_chat = False
 
-    # 1. NEW CHAT (Green - Primary)
+    # 1. NEW CHAT (Green)
     if st.button("➕ New Chat", use_container_width=True, type="primary"):
         st.session_state.session_counter += 1
         new_name = f"Session {st.session_state.session_counter}"
@@ -167,25 +255,25 @@ with st.sidebar:
     
     # 3. CONTROLS
     
-    # [1] DOWNLOAD LOG
+    # [1] DOWNLOAD
     if st.session_state.active_session_id:
         curr = st.session_state.chat_sessions[st.session_state.active_session_id]
         st.download_button("📥 Download Log", format_chat_log(st.session_state.active_session_id, curr), f"Log_{st.session_state.active_session_id}.txt", use_container_width=True)
 
-    # [2] REFRESH
+    # [2] REFRESH (Re-syncs with DB)
     if st.button("🔄 Refresh Memory", use_container_width=True):
         st.cache_resource.clear()
+        st.session_state.pop("history_loaded", None) # Force re-load
         st.rerun()
 
     # [3] DELETE CHAT (Red)
     disable_del = st.session_state.active_session_id is None
-    
     if st.session_state.confirm_del_chat:
          st.warning("⚠️ Delete this chat?")
          c1, c2 = st.columns(2)
          if c1.button("✅ Yes"):
              sid_to_del = st.session_state.active_session_id
-             
+             delete_session_from_db(sid_to_del)
              if sid_to_del in st.session_state.chat_sessions:
                  del st.session_state.chat_sessions[sid_to_del]
              if sid_to_del in st.session_state.session_titles:
@@ -213,9 +301,10 @@ with st.sidebar:
 
     # [4] WIPE EVERYTHING (Red)
     if st.session_state.confirm_wipe:
-        st.warning("⚠️ Clear All?")
+        st.warning("⚠️ DELETE DATABASE?")
         col1, col2 = st.columns(2)
         if col1.button("✅ Yes"): 
+            clear_google_sheet()
             st.session_state.chat_sessions = {"Session 1": []}
             st.session_state.session_titles = {"Session 1": "New Chat"}
             st.session_state.active_session_id = "Session 1"
@@ -272,7 +361,7 @@ def load_knowledge_base():
 with st.spinner("⚡ Starting Engine 3.0..."):
     knowledge_base = load_knowledge_base()
 
-# --- 11. SMART PROMPT WITH "FAST TRACK" OPTION ---
+# --- 11. SMART PROMPT ---
 HIDDEN_PROMPT = """
 You are the Talented Drink Innovation Manager at Monin Malaysia.
 
@@ -434,6 +523,9 @@ if prompt := st.chat_input(f"Innovate here..."):
         st.markdown(prompt)
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
     
+    # Save to Sheet in Background (Safe)
+    save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
+
     # Response
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
@@ -463,7 +555,11 @@ if prompt := st.chat_input(f"Innovate here..."):
                     full_response += chunk.text
                     message_placeholder.markdown(full_response + "▌")
             message_placeholder.markdown(full_response)
+            
+            # Save to RAM
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
+            # Save to Sheet Background
+            save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
             
         except Exception as e:
             st.error(f"Error: {e}")
