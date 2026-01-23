@@ -480,33 +480,32 @@ if prompt := st.chat_input(f"Innovate here..."):
             # --- 2. NATIVE STREAMLIT STREAMING (The Fix) ---
             # st.write_stream handles the visual typing effect automatically and perfectly.
             # It also returns the full string at the end for us to save.
-placeholder = st.empty()
-full_response = ""
-buffer = ""
-
-for chunk in response_stream:
-    try:
-        if chunk.text:
-            buffer += chunk.text
-
-            # Split by lines so user sees progress
-            lines = buffer.split("\n")
+            # --- 2. FORCED LINE-BY-LINE STREAMING ---
+            placeholder = st.empty()
+            full_response = ""
+            buffer = ""
             
-            # Keep last partial line in buffer
-            buffer = lines.pop()  
-
-            for line in lines:
-                full_response += line + "\n"
+            for chunk in response_stream:
+                try:
+                    if chunk.text:
+                        buffer += chunk.text
+            
+                        lines = buffer.split("\n")
+                        buffer = lines.pop()  # keep incomplete line
+            
+                        for line in lines:
+                            full_response += line + "\n"
+                            placeholder.markdown(full_response)
+                            time.sleep(0.03)
+            
+                except Exception:
+                    pass
+            
+            # Flush remainder
+            if buffer:
+                full_response += buffer
                 placeholder.markdown(full_response)
-                time.sleep(0.03)  # typing feel (optional)
 
-    except:
-        pass
-
-# Flush remaining buffer
-if buffer:
-    full_response += buffer
-    placeholder.markdown(full_response)
 
             
             # --- 3. SAVE ---
@@ -520,4 +519,5 @@ if buffer:
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
 
