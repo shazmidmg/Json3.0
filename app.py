@@ -387,7 +387,7 @@ except:
         # FALLBACK: Gemini 1.5 Flash (Stable)
         model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
 
-# --- 13. CHAT LOGIC (VISUAL STREAMING FIXED) ---
+# --- 13. CHAT LOGIC (NATIVE STREAMLIT STREAMING) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -405,6 +405,17 @@ with col1:
                 up_img = True
             else: up_content = up_file.getvalue().decode("utf-8")
 
+# --- GENERATOR HELPER FOR ST.WRITE_STREAM ---
+def stream_parser(stream):
+    """Yields text from the Gemini response stream safely."""
+    for chunk in stream:
+        try:
+            # We explicitly check and yield to play nice with st.write_stream
+            if chunk.text:
+                yield chunk.text
+        except:
+            pass
+
 if prompt := st.chat_input(f"Innovate here..."):
     
     # User Message
@@ -416,13 +427,8 @@ if prompt := st.chat_input(f"Innovate here..."):
     # --- NON-BLOCKING SAVE (INSTANT) ---
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
-    # Response with SMOOTH STREAMING
+    # Response with NATIVE STREAMING
     with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        # 1. SHOW STARTING STATUS
-        message_placeholder.markdown("🧠 *Generating ideas...*")
-        
-        full_response = ""
         try:
             messages_for_api = []
             if knowledge_base:
@@ -442,30 +448,17 @@ if prompt := st.chat_input(f"Innovate here..."):
                 else:
                       messages_for_api.append({"role": role, "parts": [msg["content"]]})
 
-            # --- START STREAMING ---
-            response_stream = model.generate_content(messages_for_api, stream=True)
+            # --- 1. SHOW SPINNER (Only until first token) ---
+            with st.spinner("🧠 Thinking..."):
+                response_stream = model.generate_content(messages_for_api, stream=True)
             
-            # --- ROBUST LOOP (FIXED) ---
-            for chunk in response_stream:
-                content = ""
-                # Safely extract text (Handles potential empty chunks)
-                try:
-                    content = chunk.text
-                except Exception:
-                    pass 
-                
-                if content:
-                    full_response += content
-                    # This updates the UI repeatedly
-                    message_placeholder.markdown(full_response + "▌")
-                    # ⚠️ CRITICAL: 0.01s sleep forces the UI to render the update
-                    time.sleep(0.01) 
+            # --- 2. NATIVE STREAMLIT STREAMING (The Fix) ---
+            # st.write_stream handles the visual typing effect automatically and perfectly.
+            # It also returns the full string at the end for us to save.
+            full_response = st.write_stream(stream_parser(response_stream))
             
-            # --- FINAL RENDER ---
-            message_placeholder.markdown(full_response)
-            
+            # --- 3. SAVE ---
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
-            # --- NON-BLOCKING SAVE (INSTANT) ---
             save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
             
         except Exception as e:
