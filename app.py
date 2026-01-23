@@ -290,22 +290,47 @@ with col_logo:
     except: st.header("🍹")
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
-# --- 10. KNOWLEDGE BASE (SMART CACHING) ---
+# --- 10. KNOWLEDGE BASE (ROBUST UPLOAD) ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded = []
-    try: existing = {f.display_name: f for f in genai.list_files()}
-    except: existing = {}
+    
+    try:
+        # Get list of existing files
+        existing_files = {f.display_name: f for f in genai.list_files()}
+    except:
+        existing_files = {}
+
     for filename in files:
         if not os.path.exists(filename): continue
-        if filename in existing: loaded.append(existing[filename])
+        
+        # LOGIC: If exists, try to get it. If 403 error, Re-Upload it.
+        if filename in existing_files:
+            try:
+                # Try accessing the file to check permissions
+                file_ref = genai.get_file(existing_files[filename].name)
+                loaded.append(file_ref)
+            except Exception:
+                # Permission denied (403) or missing -> Re-upload
+                try:
+                    print(f"Re-uploading {filename} due to permission error...")
+                    ref = genai.upload_file(filename, display_name=filename)
+                    while ref.state.name == "PROCESSING":
+                        time.sleep(1)
+                        ref = genai.get_file(ref.name)
+                    loaded.append(ref)
+                except: pass
         else:
+            # New upload
             try:
                 ref = genai.upload_file(filename, display_name=filename)
-                while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
+                while ref.state.name == "PROCESSING":
+                    time.sleep(1)
+                    ref = genai.get_file(ref.name)
                 loaded.append(ref)
             except: pass
+            
     return loaded
 
 with st.spinner("⚡ Starting Engine 3.0..."):
