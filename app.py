@@ -13,42 +13,10 @@ import queue
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (MOBILE SIDEBAR FIXED) ---
+# --- 2. CSS STYLING (Standard UI + Animations) ---
+# I have REMOVED the code that hides the header/footer to fix the mobile button.
 st.markdown("""
 <style>
-    /* HIDE STREAMLIT FOOTER & WATERMARK */
-    footer {visibility: hidden !important; height: 0px !important;}
-    #MainMenu {visibility: hidden !important; display: none !important;}
-    
-    /* --- HEADER CLEANUP (SURGICAL) --- */
-    /* 1. Make the header container visible but transparent */
-    header {
-        visibility: visible !important;
-        background-color: transparent !important;
-    }
-    
-    /* 2. Hide the colored rainbow decoration bar */
-    [data-testid="stDecoration"] {
-        visibility: hidden !important;
-        display: none !important;
-    }
-    
-    /* 3. Hide the top-right toolbar (Deploy, Kebab Menu) */
-    [data-testid="stToolbar"] {
-        visibility: hidden !important;
-        display: none !important;
-    }
-    
-    /* 4. FORCE MOBILE SIDEBAR ARROW VISIBLE */
-    /* This targets the arrow button specifically */
-    [data-testid="stSidebarCollapsedControl"] {
-        visibility: visible !important;
-        display: block !important;
-        color: #000000 !important; /* Force Black Color */
-        background-color: transparent !important;
-        z-index: 999999 !important; /* Force it to be on top of everything */
-    }
-
     /* TYPOGRAPHY */
     h1, h2, h3 { text-align: left !important; }
 
