@@ -86,10 +86,10 @@ st.markdown("""
     }
 
     /* MOBILE IMAGE PREVIEW FIX */
-    /* Prevents large images from pushing UI off screen in popover */
     div[data-testid="stPopoverBody"] img {
-        max-height: 150px !important;
+        max-height: 100px !important; /* Smaller previews for multiple files */
         object-fit: contain !important;
+        margin-bottom: 10px;
     }
 
     /* CENTER LOGO */
@@ -145,7 +145,6 @@ if "history_loaded" not in st.session_state:
     st.session_state.active_session_id = "Session 1"
     st.session_state.session_counter = 1
     
-    # Helper to get titles
     def get_smart_title(user_text):
         try:
             model = genai.GenerativeModel("gemini-1.5-flash") 
@@ -321,7 +320,6 @@ st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 # --- 10. KNOWLEDGE BASE (TURBO CACHED) ---
 @st.cache_resource
 def load_knowledge_base():
-    # Only run this expensive check ONCE per session
     if "kb_files" in st.session_state:
         return st.session_state.kb_files
 
@@ -335,7 +333,6 @@ def load_knowledge_base():
         if not os.path.exists(filename): continue
         if filename in existing_files:
             try:
-                # Permission check
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
             except Exception:
@@ -351,7 +348,7 @@ def load_knowledge_base():
                 loaded.append(ref)
             except: pass
             
-    st.session_state.kb_files = loaded # CACHE IT
+    st.session_state.kb_files = loaded 
     return loaded
 
 with st.spinner("⚡ Starting Engine 3.0..."):
@@ -427,7 +424,7 @@ except Exception as e:
     st.error(f"⚠️ Gemini 3 Flash Not Available. Error: {e}")
     st.stop()
 
-# --- 13. CHAT LOGIC (CLOUD BUTTON + AUTO CLEAR) ---
+# --- 13. CHAT LOGIC (MULTI-FILE UPLOAD SUPPORT) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -438,23 +435,26 @@ with col1:
         st.markdown("### ☁️ Upload Knowledge")
         st.caption("Supported: PNG, JPG, CSV, TXT")
         st.caption(" **Max Limit:** 200MB per file")
-        # DYNAMIC KEY ensures the uploader clears when the key changes
-        up_file = st.file_uploader("Drop files here", type=["png", "jpg", "csv", "txt"], label_visibility="collapsed", key=f"uploader_{st.session_state.uploader_key}")
-        up_content, up_img = None, False
-        if up_file:
-            st.success("File Ready!")
-            if "image" in up_file.type:
-                st.image(up_file, width=150)
-                up_content = Image.open(up_file)
-                up_img = True
-            else: up_content = up_file.getvalue().decode("utf-8")
+        # CHANGED: accept_multiple_files=True
+        up_files = st.file_uploader("Drop files here", type=["png", "jpg", "csv", "txt"], label_visibility="collapsed", key=f"uploader_{st.session_state.uploader_key}", accept_multiple_files=True)
+        
+        # LOGIC TO PROCESS MULTIPLE FILES
+        processed_files = []
+        if up_files:
+            st.success(f"{len(up_files)} Files Ready!")
+            for up_file in up_files:
+                if "image" in up_file.type:
+                    st.image(up_file, width=150) # Small preview
+                    img = Image.open(up_file)
+                    processed_files.append(img)
+                else:
+                    text = up_file.getvalue().decode("utf-8")
+                    processed_files.append(text)
 
 # --- GENERATOR HELPER: QUEUE CONSUMER ---
 def queue_to_stream(q):
-    """Yields content from the threaded queue until sentinel is received."""
     while True:
         try:
-            # TURBO POLL: Check queue every 0.05s
             chunk = q.get(timeout=0.05)
             if chunk is None: break  
             if isinstance(chunk, Exception): raise chunk
@@ -468,9 +468,9 @@ if prompt := st.chat_input(f"Innovate here..."):
     st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-        if up_file: st.markdown(f"*(Attached: {up_file.name})*")
+        if up_files: st.markdown(f"*(Attached {len(up_files)} files)*")
     
-    # RESET UPLOADER FOR NEXT TURN
+    # RESET UPLOADER
     st.session_state.uploader_key += 1
     
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
@@ -488,11 +488,14 @@ if prompt := st.chat_input(f"Innovate here..."):
 
             for msg in st.session_state.chat_sessions[st.session_state.active_session_id]:
                 role = "model" if msg["role"] == "assistant" else "user"
+                # CHECK IF CURRENT MESSAGE HAS ATTACHMENTS
                 if msg["content"] == prompt and msg == st.session_state.chat_sessions[st.session_state.active_session_id][-1]:
                       current_parts = [prompt]
-                      if up_content:
-                          current_parts.append(up_content)
-                          if up_img: current_parts.append("Analyze this image.")
+                      # Append ALL processed files (images/text)
+                      if processed_files:
+                          current_parts.extend(processed_files)
+                          if any(isinstance(x, Image.Image) for x in processed_files):
+                              current_parts.append("Analyze these images.")
                       messages_for_api.append({"role": role, "parts": current_parts})
                 else:
                       messages_for_api.append({"role": role, "parts": [msg["content"]]})
@@ -525,19 +528,15 @@ if prompt := st.chat_input(f"Innovate here..."):
             ]
             idx = 0
             
-            # TURBO LOOP: Check queue status very frequently
             start_time = time.time()
             text_update_time = time.time()
             
             while response_queue.empty() and worker_thread.is_alive():
-                # Only update text every 0.6s to keep it readable (prevent flickering)
                 if time.time() - text_update_time > 0.6:
                     msg = loading_texts[idx % len(loading_texts)]
                     status_placeholder.markdown(f"<p class='pulsing-text'>🧠 {msg}</p>", unsafe_allow_html=True)
                     idx += 1
                     text_update_time = time.time()
-                
-                # Check for data VERY fast (Low Latency)
                 time.sleep(0.05)
 
             # 5. STREAM RESPONSE (Once data arrives)
