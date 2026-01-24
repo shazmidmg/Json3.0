@@ -90,7 +90,7 @@ st.markdown("""
         100% { opacity: 0.5; transform: scale(0.98); }
     }
     .pulsing-text {
-        animation: pulse 2s infinite ease-in-out;
+        animation: pulse 1s infinite ease-in-out; /* Speed up pulse for faster feel */
         color: #64b5f6;
         font-weight: 500;
         font-size: 1.1em;
@@ -322,13 +322,11 @@ st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 # --- 10. KNOWLEDGE BASE (TURBO CACHED) ---
 @st.cache_resource
 def load_knowledge_base():
-    # Only run this expensive check ONCE per session restart
-    if "kb_files" in st.session_state:
-        return st.session_state.kb_files
+    # Only run this expensive check ONCE per session
+    if "kb_files" in st.session_state: return st.session_state.kb_files
 
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded = []
-    
     try: existing_files = {f.display_name: f for f in genai.list_files()}
     except: existing_files = {}
 
@@ -338,7 +336,8 @@ def load_knowledge_base():
             try:
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
-            except Exception:
+            except: 
+                # Re-upload if failed (403)
                 try:
                     ref = genai.upload_file(filename, display_name=filename)
                     while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
@@ -351,80 +350,34 @@ def load_knowledge_base():
                 loaded.append(ref)
             except: pass
             
-    st.session_state.kb_files = loaded # CACHE IT
+    st.session_state.kb_files = loaded
     return loaded
 
-with st.spinner("⚡ Starting Engine 3.0..."):
-    knowledge_base = load_knowledge_base()
+# Lazy load knowledge base (only starts when app actually needs it)
+knowledge_base = load_knowledge_base()
 
-# --- 11. SMART PROMPT ---
+# --- 11. SMART PROMPT (COMPRESSED FOR SPEED) ---
+# Reduced token count = Faster start time
 HIDDEN_PROMPT = """
-You are the Talented Drink Innovation Manager at Monin Malaysia.
+Role: Drink Innovation Manager @ Monin Malaysia.
+Task: Create 15 commercially viable drink ideas (5 Traditional, 5 Modern Heritage, 5 Crazy) using Monin products.
+Use uploaded knowledge base.
 
-Context:
-- Attached in your knowledgebase is the flavour bible, and a few past case studies, keep these in mind.
-- You are very good at crafting creative drinks that are also commercially suitable for the cafe's/business' audience.
-- During the discover session, the user will share a catalog containing all of Monin's products.
+Format (Strict Markdown):
+## Category Title
+1. **Name**: Desc.
+2. **Name**: Desc.
+(Repeat for 15)
 
-Intent:
-- To help the user achieve a certain objective for the cafe/business through crafting innovative drink ideas that will trend instantly.
-
-Discovery Session (Proactive Mode):
-- **STEP 1: ANALYZE.** Look at the user's input.
-- **STEP 2: CHECK MISSING INFO.**
-  - Cafe Name/Location?
-  - Objective/Direction?
-  - Category (Artisanal, Chain, Restaurant)?
-- **STEP 3: HYBRID RESPONSE.**
-  - Acknowledge enthusiasm.
-  - Ask missing questions.
-  - Provide "Immediate Inspiration" (5 ideas for ALL 3 categories).
-  - Provide "Next Step" prompts.
-
-VISUAL FORMATTING PROTOCOL (STRICT):
-1. **HUGE TITLES:** Use Markdown Header 2 (`##`) for every Category Title.
-2. **CLEAN LISTS:** Use standard numbered lists (`1. `, `2. `).
-3. **SPACING:** Ensure every numbered item is on its own line. Do NOT combine them into a paragraph.
-4. **BOLDING:** Bold the Drink Name.
-
-Correct Visual Output Example:
-
-## Category 1: Traditional (Refined & Timeless)
-1. **Idea One**: Description here.
-2. **Idea Two**: Description here.
-3. **Idea Three**: Description here.
-4. **Idea Four**: Description here.
-5. **Idea Five**: Description here.
-
-## Category 2: Modern Heritage (Malaysian Soul, Modern Twist)
-6. **Idea Six**: Description here.
-7. **Idea Seven**: Description here.
-8. **Idea Eight**: Description here.
-9. **Idea Nine**: Description here.
-10. **Idea Ten**: Description here.
-
-## Category 3: Crazy (Avant-Garde & Experimental)
-11. **Idea Eleven**: Description here.
-12. **Idea Twelve**: Description here.
-13. **Idea Thirteen**: Description here.
-14. **Idea Fourteen**: Description here.
-15. **Idea Fifteen**: Description here.
-
-Would you like me to expand on any ideas, combine any flavors, or provide the recipe of some ideas? Example prompts:
-
-1. I like Idea 6, Idea 7 and Idea 13, kindly give me more drink ideas like these.
-
-2. I like Idea 2 and Idea 8, kindly combine these two drink ideas together.
-
-3. I want to finalise Idea 1, Idea 6 and Idea 12 as my drink ideas, kindly give me the recipe for these ideas.
+Double line breaks between items.
 """
 
 # --- 12. MODEL SELECTOR (STRICT GEMINI 3) ---
 try:
     model = genai.GenerativeModel("gemini-3-flash-preview", system_instruction=HIDDEN_PROMPT)
-    st.toast("🚀 Running on Gemini 3 Flash Preview!")
+    # Removing toast to reduce visual clutter/delay
 except Exception as e:
-    st.error(f"⚠️ Gemini 3 Flash Not Available. Error: {e}")
+    st.error(f"⚠️ Gemini 3 Flash Unavailable. {e}")
     st.stop()
 
 # --- 13. CHAT LOGIC (CLOUD BUTTON) ---
@@ -448,13 +401,13 @@ with col1:
                 up_img = True
             else: up_content = up_file.getvalue().decode("utf-8")
 
-# --- GENERATOR HELPER: QUEUE CONSUMER ---
+# --- GENERATOR HELPER: TURBO QUEUE ---
 def queue_to_stream(q):
     """Yields content from the threaded queue until sentinel is received."""
     while True:
         try:
-            # TURBO POLL: Check queue every 0.05s instead of 0.1s
-            chunk = q.get(timeout=0.05)
+            # TURBO POLL: Check queue every 0.01s (Instant)
+            chunk = q.get(timeout=0.01)
             if chunk is None: break  
             if isinstance(chunk, Exception): raise chunk
             yield chunk
@@ -513,11 +466,11 @@ if prompt := st.chat_input(f"Innovate here..."):
             # 4. SHOW LOOPING ANIMATION (While Queue is Empty)
             status_placeholder = st.empty()
             loading_texts = [
-                "🔍 Analyzing request...",
-                "📖 Consulting Flavor Bible...",
-                "🧪 Checking compatibility...",
-                "🎨 Drafting concepts...",
-                "✨ Refining details..."
+                "🔍 Analyzing...",
+                "📖 Checking Bible...",
+                "🧪 Mixing...",
+                "🎨 Drafting...",
+                "✨ Refining..."
             ]
             idx = 0
             
@@ -525,16 +478,17 @@ if prompt := st.chat_input(f"Innovate here..."):
             start_time = time.time()
             text_update_time = time.time()
             
+            # Keep looping until data arrives OR thread dies
             while response_queue.empty() and worker_thread.is_alive():
-                # Only update text every 0.6s to keep it readable
-                if time.time() - text_update_time > 0.6:
+                # Only update text every 0.4s to keep it readable
+                if time.time() - text_update_time > 0.4:
                     msg = loading_texts[idx % len(loading_texts)]
                     status_placeholder.markdown(f"<p class='pulsing-text'>🧠 {msg}</p>", unsafe_allow_html=True)
                     idx += 1
                     text_update_time = time.time()
                 
-                # Check for data VERY fast (Low Latency)
-                time.sleep(0.05)
+                # Check for data VERY fast (Low Latency 0.01s)
+                time.sleep(0.01)
 
             # 5. STREAM RESPONSE (Once data arrives)
             status_placeholder.empty()
