@@ -8,6 +8,7 @@ import os
 import time
 import pandas as pd
 import threading
+import queue # <--- NEW: Required for threading communication
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
@@ -82,16 +83,18 @@ st.markdown("""
         color: #ffffff !important;
     }
 
-    /* --- ANIMATIONS --- */
+    /* --- PULSING TEXT ANIMATION --- */
     @keyframes pulse {
-        0% { opacity: 0.6; }
-        50% { opacity: 1; }
-        100% { opacity: 0.6; }
+        0% { opacity: 0.5; transform: scale(0.98); }
+        50% { opacity: 1; transform: scale(1.02); }
+        100% { opacity: 0.5; transform: scale(0.98); }
     }
     .pulsing-text {
-        animation: pulse 1.5s infinite;
-        color: #4caf50;
-        font-weight: bold;
+        animation: pulse 2s infinite ease-in-out;
+        color: #64b5f6; /* Light Blue */
+        font-weight: 500;
+        font-size: 1.1em;
+        padding: 10px;
     }
 
     /* CENTER LOGO */
@@ -316,7 +319,7 @@ with col_logo:
     except: st.header("🍹")
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
-# --- 10. KNOWLEDGE BASE (ROBUST UPLOAD) ---
+# --- 10. KNOWLEDGE BASE ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
@@ -328,10 +331,11 @@ def load_knowledge_base():
         if not os.path.exists(filename): continue
         if filename in existing_files:
             try:
-                # Check permission (Fixes 403)
+                # Permission check
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
             except Exception:
+                # Re-upload if failed
                 try:
                     ref = genai.upload_file(filename, display_name=filename)
                     while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
@@ -442,12 +446,18 @@ with col1:
                 up_img = True
             else: up_content = up_file.getvalue().decode("utf-8")
 
-# --- GENERATOR HELPER ---
-def stream_parser(stream):
-    for chunk in stream:
+# --- GENERATOR HELPER: QUEUE CONSUMER ---
+def queue_to_stream(q):
+    """Yields content from the threaded queue until sentinel is received."""
+    while True:
         try:
-            if chunk.text: yield chunk.text
-        except: pass
+            # Wait for data (non-blocking visually because of the loop below)
+            chunk = q.get(timeout=0.1)
+            if chunk is None: break  # Sentinel
+            if isinstance(chunk, Exception): raise chunk
+            yield chunk
+        except queue.Empty:
+            continue
 
 if prompt := st.chat_input(f"Innovate here..."):
     
@@ -459,9 +469,10 @@ if prompt := st.chat_input(f"Innovate here..."):
     
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
-    # Response with ANIMATED WAITING
+    # Response with THREADED ANIMATION
     with st.chat_message("assistant"):
         try:
+            # 1. Prepare Data
             messages_for_api = []
             if knowledge_base:
                 parts = list(knowledge_base)
@@ -480,31 +491,48 @@ if prompt := st.chat_input(f"Innovate here..."):
                 else:
                       messages_for_api.append({"role": role, "parts": [msg["content"]]})
 
-            # --- ANIMATED "THINKING" LOOP ---
-            with st.status("🧠 **Starting Innovation Engine...**", expanded=True) as status:
-                status_placeholder = st.empty()
-                
-                # Dynamic Loop: Changes text every 0.4s to look "Active"
-                loading_texts = [
-                    "🔍 Analyzing your request...",
-                    "📖 Opening Flavor Bible...",
-                    "🧪 Checking ingredient compatibility...",
-                    "🎨 Drafting creative concepts...",
-                    "✨ Polishing the final list..."
-                ]
-                
-                for text in loading_texts:
-                    # 'pulsing-text' class comes from our custom CSS
-                    status_placeholder.markdown(f"<p class='pulsing-text'>{text}</p>", unsafe_allow_html=True)
-                    time.sleep(0.4) 
-                
-                # Start API (while loop runs)
-                response_stream = model.generate_content(messages_for_api, stream=True)
-                
-                status.update(label="✅ **Innovation Complete!**", state="complete", expanded=False)
+            # 2. Setup Threading Queue
+            response_queue = queue.Queue()
+            
+            def api_worker():
+                """Runs in background thread to fetch AI response"""
+                try:
+                    stream = model.generate_content(messages_for_api, stream=True)
+                    for chunk in stream:
+                        if chunk.text: response_queue.put(chunk.text)
+                    response_queue.put(None) # Signal Done
+                except Exception as e:
+                    response_queue.put(e)
 
-            # --- NATIVE STREAMING ---
-            full_response = st.write_stream(stream_parser(response_stream))
+            # 3. Start API Thread
+            worker_thread = threading.Thread(target=api_worker)
+            worker_thread.start()
+
+            # 4. SHOW LOOPING ANIMATION (While Queue is Empty)
+            status_placeholder = st.empty()
+            loading_texts = [
+                "🔍 Analyzing request...",
+                "📖 Consulting Flavor Bible...",
+                "🧪 Checking compatibility...",
+                "🎨 Drafting concepts...",
+                "✨ Refining details..."
+            ]
+            idx = 0
+            
+            # This loop runs while the thread is working and hasn't produced data yet
+            while response_queue.empty() and worker_thread.is_alive():
+                # Show pulsing text
+                msg = loading_texts[idx % len(loading_texts)]
+                status_placeholder.markdown(f"<p class='pulsing-text'>🧠 {msg}</p>", unsafe_allow_html=True)
+                idx += 1
+                time.sleep(0.4) # Control Animation Speed
+
+            # 5. STREAM RESPONSE (Once data arrives)
+            # Clear animation
+            status_placeholder.empty()
+            
+            # Stream the rest
+            full_response = st.write_stream(queue_to_stream(response_queue))
             
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
             save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
