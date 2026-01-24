@@ -13,8 +13,7 @@ import queue
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (Standard UI + Animations) ---
-# I have REMOVED the code that hides the header/footer to fix the mobile button.
+# --- 2. CSS STYLING (CLEAN UI + MOBILE FIXES) ---
 st.markdown("""
 <style>
     /* TYPOGRAPHY */
@@ -86,6 +85,13 @@ st.markdown("""
         padding: 10px;
     }
 
+    /* MOBILE IMAGE PREVIEW FIX */
+    /* Prevents large images from pushing UI off screen in popover */
+    div[data-testid="stPopoverBody"] img {
+        max-height: 150px !important;
+        object-fit: contain !important;
+    }
+
     /* CENTER LOGO */
     div[data-testid="stImage"] { display: block; margin-left: auto; margin-right: auto; }
 </style>
@@ -128,14 +134,9 @@ sheet = connect_to_db()
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-# --- 5. SMART TITLE GENERATOR ---
-def get_smart_title(user_text):
-    try:
-        model = genai.GenerativeModel("gemini-1.5-flash") 
-        response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
-        return response.text.strip().replace('"', '').replace("Title:", "")
-    except:
-        return (user_text[:25] + "..") if len(user_text) > 25 else user_text
+# --- 5. INITIALIZE SESSION STATE ---
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
 
 # --- 6. HISTORY LOADER ---
 if "history_loaded" not in st.session_state:
@@ -144,6 +145,15 @@ if "history_loaded" not in st.session_state:
     st.session_state.active_session_id = "Session 1"
     st.session_state.session_counter = 1
     
+    # Helper to get titles
+    def get_smart_title(user_text):
+        try:
+            model = genai.GenerativeModel("gemini-1.5-flash") 
+            response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
+            return response.text.strip().replace('"', '').replace("Title:", "")
+        except:
+            return (user_text[:25] + "..") if len(user_text) > 25 else user_text
+
     if sheet:
         try:
             with st.spinner("🔄 Syncing History..."):
@@ -325,7 +335,7 @@ def load_knowledge_base():
         if not os.path.exists(filename): continue
         if filename in existing_files:
             try:
-                # Permission check to prevent 403
+                # Permission check
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
             except Exception:
@@ -417,7 +427,7 @@ except Exception as e:
     st.error(f"⚠️ Gemini 3 Flash Not Available. Error: {e}")
     st.stop()
 
-# --- 13. CHAT LOGIC (CLOUD BUTTON) ---
+# --- 13. CHAT LOGIC (CLOUD BUTTON + AUTO CLEAR) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -426,7 +436,10 @@ col1, col2 = st.columns([0.25, 0.75])
 with col1:
     with st.popover("☁️ Upload (Max 200MB)", use_container_width=True):
         st.markdown("### ☁️ Upload Knowledge")
-        up_file = st.file_uploader("Drop files here", type=["png", "jpg", "csv", "txt"], label_visibility="collapsed")
+        st.caption("Supported: PNG, JPG, CSV, TXT")
+        st.caption(" **Max Limit:** 200MB per file")
+        # DYNAMIC KEY ensures the uploader clears when the key changes
+        up_file = st.file_uploader("Drop files here", type=["png", "jpg", "csv", "txt"], label_visibility="collapsed", key=f"uploader_{st.session_state.uploader_key}")
         up_content, up_img = None, False
         if up_file:
             st.success("File Ready!")
@@ -456,6 +469,9 @@ if prompt := st.chat_input(f"Innovate here..."):
     with st.chat_message("user"):
         st.markdown(prompt)
         if up_file: st.markdown(f"*(Attached: {up_file.name})*")
+    
+    # RESET UPLOADER FOR NEXT TURN
+    st.session_state.uploader_key += 1
     
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
@@ -538,4 +554,3 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
-
