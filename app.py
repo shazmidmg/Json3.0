@@ -13,32 +13,40 @@ import queue
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (CLEAN UI + MOBILE FIX) ---
+# --- 2. CSS STYLING (MOBILE SIDEBAR FIXED) ---
 st.markdown("""
 <style>
-    /* HIDE STREAMLIT FOOTER */
+    /* HIDE STREAMLIT FOOTER & WATERMARK */
     footer {visibility: hidden !important; height: 0px !important;}
     #MainMenu {visibility: hidden !important; display: none !important;}
     
-    /* HIDE TOP RIGHT MENU (Settings/Deploy) */
-    [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
-    [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
-    .stDeployButton {visibility: hidden !important; display: none !important;}
-    
-    /* --- MOBILE SIDEBAR FIX --- */
-    /* Ensure the Header layer is visible and clickable (z-index is key) */
+    /* --- HEADER CLEANUP (SURGICAL) --- */
+    /* 1. Make the header container visible but transparent */
     header {
         visibility: visible !important;
         background-color: transparent !important;
-        z-index: 100000 !important; /* Force top layer */
     }
     
-    /* Explicitly target the sidebar toggle button (Arrow/Hamburger) */
+    /* 2. Hide the colored rainbow decoration bar */
+    [data-testid="stDecoration"] {
+        visibility: hidden !important;
+        display: none !important;
+    }
+    
+    /* 3. Hide the top-right toolbar (Deploy, Kebab Menu) */
+    [data-testid="stToolbar"] {
+        visibility: hidden !important;
+        display: none !important;
+    }
+    
+    /* 4. FORCE MOBILE SIDEBAR ARROW VISIBLE */
+    /* This targets the arrow button specifically */
     [data-testid="stSidebarCollapsedControl"] {
-        display: block !important;
         visibility: visible !important;
-        color: #4a4a4a !important; /* Make sure arrow is dark enough to see */
-        background-color: rgba(255,255,255, 0.2) !important; /* Slight background for touch target */
+        display: block !important;
+        color: #000000 !important; /* Force Black Color */
+        background-color: transparent !important;
+        z-index: 999999 !important; /* Force it to be on top of everything */
     }
 
     /* TYPOGRAPHY */
@@ -161,7 +169,7 @@ def get_smart_title(user_text):
     except:
         return (user_text[:25] + "..") if len(user_text) > 25 else user_text
 
-# --- 6. HISTORY LOADER (TURBO) ---
+# --- 6. HISTORY LOADER ---
 if "history_loaded" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
     st.session_state.session_titles = {"Session 1": "New Chat"}
