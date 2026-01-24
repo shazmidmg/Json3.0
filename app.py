@@ -13,20 +13,33 @@ import queue
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS STYLING (CLEAN UI + ANIMATIONS) ---
+# --- 2. CSS STYLING (CLEAN UI + MOBILE FIX) ---
 st.markdown("""
 <style>
-    /* HIDE STREAMLIT FOOTER & WATERMARK */
+    /* HIDE STREAMLIT FOOTER */
     footer {visibility: hidden !important; height: 0px !important;}
     #MainMenu {visibility: hidden !important; display: none !important;}
     
-    /* HIDE TOP RIGHT MENU */
+    /* HIDE TOP RIGHT MENU (Settings/Deploy) */
     [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
     [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
     .stDeployButton {visibility: hidden !important; display: none !important;}
     
-    /* HEADER TRANSPARENCY */
-    header {visibility: visible !important; background-color: transparent !important;}
+    /* --- MOBILE SIDEBAR FIX --- */
+    /* Ensure the Header layer is visible and clickable (z-index is key) */
+    header {
+        visibility: visible !important;
+        background-color: transparent !important;
+        z-index: 100000 !important; /* Force top layer */
+    }
+    
+    /* Explicitly target the sidebar toggle button (Arrow/Hamburger) */
+    [data-testid="stSidebarCollapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        color: #4a4a4a !important; /* Make sure arrow is dark enough to see */
+        background-color: rgba(255,255,255, 0.2) !important; /* Slight background for touch target */
+    }
 
     /* TYPOGRAPHY */
     h1, h2, h3 { text-align: left !important; }
@@ -148,7 +161,7 @@ def get_smart_title(user_text):
     except:
         return (user_text[:25] + "..") if len(user_text) > 25 else user_text
 
-# --- 6. HISTORY LOADER ---
+# --- 6. HISTORY LOADER (TURBO) ---
 if "history_loaded" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
     st.session_state.session_titles = {"Session 1": "New Chat"}
@@ -322,7 +335,7 @@ st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 # --- 10. KNOWLEDGE BASE (TURBO CACHED) ---
 @st.cache_resource
 def load_knowledge_base():
-    # Only run this expensive check ONCE per session restart
+    # Only run this expensive check ONCE per session
     if "kb_files" in st.session_state:
         return st.session_state.kb_files
 
@@ -336,6 +349,7 @@ def load_knowledge_base():
         if not os.path.exists(filename): continue
         if filename in existing_files:
             try:
+                # Permission check to prevent 403
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
             except Exception:
@@ -453,7 +467,7 @@ def queue_to_stream(q):
     """Yields content from the threaded queue until sentinel is received."""
     while True:
         try:
-            # TURBO POLL: Check queue every 0.05s instead of 0.1s
+            # TURBO POLL: Check queue every 0.05s
             chunk = q.get(timeout=0.05)
             if chunk is None: break  
             if isinstance(chunk, Exception): raise chunk
@@ -526,7 +540,7 @@ if prompt := st.chat_input(f"Innovate here..."):
             text_update_time = time.time()
             
             while response_queue.empty() and worker_thread.is_alive():
-                # Only update text every 0.6s to keep it readable
+                # Only update text every 0.6s to keep it readable (prevent flickering)
                 if time.time() - text_update_time > 0.6:
                     msg = loading_texts[idx % len(loading_texts)]
                     status_placeholder.markdown(f"<p class='pulsing-text'>🧠 {msg}</p>", unsafe_allow_html=True)
@@ -538,8 +552,6 @@ if prompt := st.chat_input(f"Innovate here..."):
 
             # 5. STREAM RESPONSE (Once data arrives)
             status_placeholder.empty()
-            
-            # Stream the rest
             full_response = st.write_stream(queue_to_stream(response_queue))
             
             st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
