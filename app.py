@@ -8,7 +8,7 @@ import os
 import time
 import pandas as pd
 import threading
-import queue # <--- NEW: Required for threading communication
+import queue
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
@@ -142,6 +142,7 @@ if "GEMINI_API_KEY" in st.secrets:
 # --- 5. SMART TITLE GENERATOR ---
 def get_smart_title(user_text):
     try:
+        # Using 1.5 Flash here purely for speed/cost on small tasks
         model = genai.GenerativeModel("gemini-1.5-flash") 
         response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
         return response.text.strip().replace('"', '').replace("Title:", "")
@@ -319,13 +320,16 @@ with col_logo:
     except: st.header("🍹")
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
-# --- 10. KNOWLEDGE BASE ---
+# --- 10. KNOWLEDGE BASE (ROBUST UPLOAD) ---
 @st.cache_resource
 def load_knowledge_base():
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded = []
-    try: existing_files = {f.display_name: f for f in genai.list_files()}
-    except: existing_files = {}
+    
+    try:
+        existing_files = {f.display_name: f for f in genai.list_files()}
+    except:
+        existing_files = {}
 
     for filename in files:
         if not os.path.exists(filename): continue
@@ -414,16 +418,15 @@ Would you like me to expand on any ideas, combine any flavors, or provide the re
 3. I want to finalise Idea 1, Idea 6 and Idea 12 as my drink ideas, kindly give me the recipe for these ideas.
 """
 
-# --- 12. MODEL SELECTOR ---
+# --- 12. MODEL SELECTOR (STRICT GEMINI 3) ---
+# We have REMOVED the fallback to slower models.
+# This will force the app to use the fastest preview model available.
 try:
     model = genai.GenerativeModel("gemini-3-flash-preview", system_instruction=HIDDEN_PROMPT)
     st.toast("🚀 Running on Gemini 3 Flash Preview!")
-except:
-    try:
-        model = genai.GenerativeModel("gemini-2.0-flash-exp", system_instruction=HIDDEN_PROMPT)
-        st.toast("⚡ Running on Gemini 2.0 Flash")
-    except:
-        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=HIDDEN_PROMPT)
+except Exception as e:
+    st.error(f"⚠️ Gemini 3 Flash Not Available. Error: {e}")
+    st.stop() # Stop app if we can't use the fast model
 
 # --- 13. CHAT LOGIC (CLOUD BUTTON) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
@@ -451,8 +454,8 @@ def queue_to_stream(q):
     """Yields content from the threaded queue until sentinel is received."""
     while True:
         try:
-            # Wait for data (non-blocking visually because of the loop below)
-            chunk = q.get(timeout=0.1)
+            # High speed polling (0.05s) to ensure instant display when ready
+            chunk = q.get(timeout=0.05)
             if chunk is None: break  # Sentinel
             if isinstance(chunk, Exception): raise chunk
             yield chunk
@@ -521,11 +524,11 @@ if prompt := st.chat_input(f"Innovate here..."):
             
             # This loop runs while the thread is working and hasn't produced data yet
             while response_queue.empty() and worker_thread.is_alive():
-                # Show pulsing text
                 msg = loading_texts[idx % len(loading_texts)]
                 status_placeholder.markdown(f"<p class='pulsing-text'>🧠 {msg}</p>", unsafe_allow_html=True)
                 idx += 1
-                time.sleep(0.4) # Control Animation Speed
+                # Faster animation cycle (0.3s) for perceived speed
+                time.sleep(0.3) 
 
             # 5. STREAM RESPONSE (Once data arrives)
             # Clear animation
