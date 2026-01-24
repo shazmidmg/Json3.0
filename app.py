@@ -138,21 +138,23 @@ if "GEMINI_API_KEY" in st.secrets:
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
-# --- 6. HISTORY LOADER ---
+# --- 6. SMART TITLE GENERATOR (FIXED: MOVED TO GLOBAL SCOPE) ---
+def get_smart_title(user_text):
+    try:
+        # Use 1.5 Flash for cheap/fast background tasks
+        model = genai.GenerativeModel("gemini-1.5-flash") 
+        response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
+        return response.text.strip().replace('"', '').replace("Title:", "")
+    except:
+        return (user_text[:25] + "..") if len(user_text) > 25 else user_text
+
+# --- 7. HISTORY LOADER ---
 if "history_loaded" not in st.session_state:
     st.session_state.chat_sessions = {"Session 1": []}
     st.session_state.session_titles = {"Session 1": "New Chat"}
     st.session_state.active_session_id = "Session 1"
     st.session_state.session_counter = 1
     
-    def get_smart_title(user_text):
-        try:
-            model = genai.GenerativeModel("gemini-1.5-flash") 
-            response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
-            return response.text.strip().replace('"', '').replace("Title:", "")
-        except:
-            return (user_text[:25] + "..") if len(user_text) > 25 else user_text
-
     if sheet:
         try:
             with st.spinner("🔄 Syncing History..."):
@@ -172,7 +174,10 @@ if "history_loaded" not in st.session_state:
                                 n = int(sid.replace("Session ", ""))
                                 if n > max_num: max_num = n
                             except: pass
-                    for sid, first_msg in temp_first_msgs.items(): titles[sid] = get_smart_title(first_msg)
+                    # Generate titles for loaded sessions using the global function
+                    for sid, first_msg in temp_first_msgs.items(): 
+                        titles[sid] = get_smart_title(first_msg)
+                        
                     if rebuilt:
                         st.session_state.chat_sessions = rebuilt
                         st.session_state.session_titles = titles
@@ -182,7 +187,7 @@ if "history_loaded" not in st.session_state:
         except: st.session_state.history_loaded = True
     else: st.session_state.history_loaded = True
 
-# --- 7. HELPER FUNCTIONS ---
+# --- 8. HELPER FUNCTIONS ---
 def format_chat_log(session_name, messages):
     log_text = f"--- LOG: {session_name} ---\nDate: {datetime.now()}\n\n"
     if not messages: return log_text + "(Empty)"
@@ -222,7 +227,7 @@ def delete_session_from_db(session_id):
             if new_rows: sheet.update(range_name='A2', values=new_rows)
         except Exception as e: st.error(f"DB Error: {e}")
 
-# --- 8. SIDEBAR ---
+# --- 9. SIDEBAR ---
 with st.sidebar:
     st.header("🗄️ History")
     if "confirm_wipe" not in st.session_state: st.session_state.confirm_wipe = False
@@ -310,14 +315,14 @@ with st.sidebar:
         st.session_state.password_correct = False
         st.rerun()
 
-# --- 9. MAIN INTERFACE ---
+# --- 10. MAIN INTERFACE ---
 col_logo, col_title = st.columns([0.15, 0.85]) 
 with col_logo:
     try: st.image("logo.png", width=150) 
     except: st.header("🍹")
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
-# --- 10. KNOWLEDGE BASE (TURBO CACHED) ---
+# --- 11. KNOWLEDGE BASE (TURBO CACHED) ---
 @st.cache_resource
 def load_knowledge_base():
     if "kb_files" in st.session_state:
@@ -333,6 +338,7 @@ def load_knowledge_base():
         if not os.path.exists(filename): continue
         if filename in existing_files:
             try:
+                # Permission check
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
             except Exception:
@@ -354,7 +360,7 @@ def load_knowledge_base():
 with st.spinner("⚡ Starting Engine 3.0..."):
     knowledge_base = load_knowledge_base()
 
-# --- 11. SMART PROMPT ---
+# --- 12. SMART PROMPT ---
 HIDDEN_PROMPT = """
 You are the Talented Drink Innovation Manager at Monin Malaysia.
 
@@ -416,7 +422,7 @@ Would you like me to expand on any ideas, combine any flavors, or provide the re
 3. I want to finalise Idea 1, Idea 6 and Idea 12 as my drink ideas, kindly give me the recipe for these ideas.
 """
 
-# --- 12. MODEL SELECTOR (STRICT GEMINI 3) ---
+# --- 13. MODEL SELECTOR (STRICT GEMINI 3) ---
 try:
     model = genai.GenerativeModel("gemini-3-flash-preview", system_instruction=HIDDEN_PROMPT)
     st.toast("🚀 Running on Gemini 3 Flash Preview!")
@@ -424,7 +430,7 @@ except Exception as e:
     st.error(f"⚠️ Gemini 3 Flash Not Available. Error: {e}")
     st.stop()
 
-# --- 13. CHAT LOGIC (MULTI-FILE UPLOAD SUPPORT) ---
+# --- 14. CHAT LOGIC (CLOUD BUTTON + AUTO CLEAR) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -435,16 +441,15 @@ with col1:
         st.markdown("### ☁️ Upload Knowledge")
         st.caption("Supported: PNG, JPG, CSV, TXT")
         st.caption(" **Max Limit:** 200MB per file")
-        # CHANGED: accept_multiple_files=True
+        # MULTI-FILE & DYNAMIC KEY
         up_files = st.file_uploader("Drop files here", type=["png", "jpg", "csv", "txt"], label_visibility="collapsed", key=f"uploader_{st.session_state.uploader_key}", accept_multiple_files=True)
         
-        # LOGIC TO PROCESS MULTIPLE FILES
         processed_files = []
         if up_files:
             st.success(f"{len(up_files)} Files Ready!")
             for up_file in up_files:
                 if "image" in up_file.type:
-                    st.image(up_file, width=150) # Small preview
+                    st.image(up_file, width=150)
                     img = Image.open(up_file)
                     processed_files.append(img)
                 else:
@@ -453,8 +458,10 @@ with col1:
 
 # --- GENERATOR HELPER: QUEUE CONSUMER ---
 def queue_to_stream(q):
+    """Yields content from the threaded queue until sentinel is received."""
     while True:
         try:
+            # TURBO POLL: Check queue every 0.05s
             chunk = q.get(timeout=0.05)
             if chunk is None: break  
             if isinstance(chunk, Exception): raise chunk
@@ -491,7 +498,6 @@ if prompt := st.chat_input(f"Innovate here..."):
                 # CHECK IF CURRENT MESSAGE HAS ATTACHMENTS
                 if msg["content"] == prompt and msg == st.session_state.chat_sessions[st.session_state.active_session_id][-1]:
                       current_parts = [prompt]
-                      # Append ALL processed files (images/text)
                       if processed_files:
                           current_parts.extend(processed_files)
                           if any(isinstance(x, Image.Image) for x in processed_files):
