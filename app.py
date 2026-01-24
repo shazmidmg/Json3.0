@@ -83,7 +83,7 @@ st.markdown("""
         color: #ffffff !important;
     }
 
-    /* --- PULSING TEXT ANIMATION --- */
+    /* PULSING TEXT ANIMATION */
     @keyframes pulse {
         0% { opacity: 0.5; transform: scale(0.98); }
         50% { opacity: 1; transform: scale(1.02); }
@@ -91,7 +91,7 @@ st.markdown("""
     }
     .pulsing-text {
         animation: pulse 2s infinite ease-in-out;
-        color: #64b5f6; /* Light Blue */
+        color: #64b5f6;
         font-weight: 500;
         font-size: 1.1em;
         padding: 10px;
@@ -142,7 +142,6 @@ if "GEMINI_API_KEY" in st.secrets:
 # --- 5. SMART TITLE GENERATOR ---
 def get_smart_title(user_text):
     try:
-        # Using 1.5 Flash here purely for speed/cost on small tasks
         model = genai.GenerativeModel("gemini-1.5-flash") 
         response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
         return response.text.strip().replace('"', '').replace("Title:", "")
@@ -320,26 +319,26 @@ with col_logo:
     except: st.header("🍹")
 st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
-# --- 10. KNOWLEDGE BASE (ROBUST UPLOAD) ---
+# --- 10. KNOWLEDGE BASE (TURBO CACHED) ---
 @st.cache_resource
 def load_knowledge_base():
+    # Only run this expensive check ONCE per session restart
+    if "kb_files" in st.session_state:
+        return st.session_state.kb_files
+
     files = ["bible1.pdf", "bible2.pdf", "studies.pdf", "clients.csv"]
     loaded = []
     
-    try:
-        existing_files = {f.display_name: f for f in genai.list_files()}
-    except:
-        existing_files = {}
+    try: existing_files = {f.display_name: f for f in genai.list_files()}
+    except: existing_files = {}
 
     for filename in files:
         if not os.path.exists(filename): continue
         if filename in existing_files:
             try:
-                # Permission check
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
             except Exception:
-                # Re-upload if failed
                 try:
                     ref = genai.upload_file(filename, display_name=filename)
                     while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
@@ -351,6 +350,8 @@ def load_knowledge_base():
                 while ref.state.name == "PROCESSING": time.sleep(1); ref = genai.get_file(ref.name)
                 loaded.append(ref)
             except: pass
+            
+    st.session_state.kb_files = loaded # CACHE IT
     return loaded
 
 with st.spinner("⚡ Starting Engine 3.0..."):
@@ -419,14 +420,12 @@ Would you like me to expand on any ideas, combine any flavors, or provide the re
 """
 
 # --- 12. MODEL SELECTOR (STRICT GEMINI 3) ---
-# We have REMOVED the fallback to slower models.
-# This will force the app to use the fastest preview model available.
 try:
     model = genai.GenerativeModel("gemini-3-flash-preview", system_instruction=HIDDEN_PROMPT)
     st.toast("🚀 Running on Gemini 3 Flash Preview!")
 except Exception as e:
     st.error(f"⚠️ Gemini 3 Flash Not Available. Error: {e}")
-    st.stop() # Stop app if we can't use the fast model
+    st.stop()
 
 # --- 13. CHAT LOGIC (CLOUD BUTTON) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
@@ -454,9 +453,9 @@ def queue_to_stream(q):
     """Yields content from the threaded queue until sentinel is received."""
     while True:
         try:
-            # High speed polling (0.05s) to ensure instant display when ready
+            # TURBO POLL: Check queue every 0.05s instead of 0.1s
             chunk = q.get(timeout=0.05)
-            if chunk is None: break  # Sentinel
+            if chunk is None: break  
             if isinstance(chunk, Exception): raise chunk
             yield chunk
         except queue.Empty:
@@ -522,16 +521,22 @@ if prompt := st.chat_input(f"Innovate here..."):
             ]
             idx = 0
             
-            # This loop runs while the thread is working and hasn't produced data yet
+            # TURBO LOOP: Check queue status very frequently
+            start_time = time.time()
+            text_update_time = time.time()
+            
             while response_queue.empty() and worker_thread.is_alive():
-                msg = loading_texts[idx % len(loading_texts)]
-                status_placeholder.markdown(f"<p class='pulsing-text'>🧠 {msg}</p>", unsafe_allow_html=True)
-                idx += 1
-                # Faster animation cycle (0.3s) for perceived speed
-                time.sleep(0.3) 
+                # Only update text every 0.6s to keep it readable
+                if time.time() - text_update_time > 0.6:
+                    msg = loading_texts[idx % len(loading_texts)]
+                    status_placeholder.markdown(f"<p class='pulsing-text'>🧠 {msg}</p>", unsafe_allow_html=True)
+                    idx += 1
+                    text_update_time = time.time()
+                
+                # Check for data VERY fast (Low Latency)
+                time.sleep(0.05)
 
             # 5. STREAM RESPONSE (Once data arrives)
-            # Clear animation
             status_placeholder.empty()
             
             # Stream the rest
