@@ -87,7 +87,7 @@ st.markdown("""
 
     /* MOBILE IMAGE PREVIEW FIX */
     div[data-testid="stPopoverBody"] img {
-        max-height: 100px !important; /* Smaller previews for multiple files */
+        max-height: 100px !important; 
         object-fit: contain !important;
         margin-bottom: 10px;
     }
@@ -138,10 +138,9 @@ if "GEMINI_API_KEY" in st.secrets:
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
-# --- 6. SMART TITLE GENERATOR (FIXED: MOVED TO GLOBAL SCOPE) ---
+# --- 6. SMART TITLE GENERATOR (GLOBAL SCOPE) ---
 def get_smart_title(user_text):
     try:
-        # Use 1.5 Flash for cheap/fast background tasks
         model = genai.GenerativeModel("gemini-1.5-flash") 
         response = model.generate_content(f"Generate a 3-4 word title. No quotes. Input: {user_text}")
         return response.text.strip().replace('"', '').replace("Title:", "")
@@ -174,10 +173,10 @@ if "history_loaded" not in st.session_state:
                                 n = int(sid.replace("Session ", ""))
                                 if n > max_num: max_num = n
                             except: pass
-                    # Generate titles for loaded sessions using the global function
-                    for sid, first_msg in temp_first_msgs.items(): 
+                    
+                    for sid, first_msg in temp_first_msgs.items():
                         titles[sid] = get_smart_title(first_msg)
-                        
+
                     if rebuilt:
                         st.session_state.chat_sessions = rebuilt
                         st.session_state.session_titles = titles
@@ -338,7 +337,6 @@ def load_knowledge_base():
         if not os.path.exists(filename): continue
         if filename in existing_files:
             try:
-                # Permission check
                 file_ref = genai.get_file(existing_files[filename].name)
                 loaded.append(file_ref)
             except Exception:
@@ -430,10 +428,19 @@ except Exception as e:
     st.error(f"⚠️ Gemini 3 Flash Not Available. Error: {e}")
     st.stop()
 
-# --- 14. CHAT LOGIC (CLOUD BUTTON + AUTO CLEAR) ---
+# --- 14. CHAT LOGIC (CUSTOM ICONS) ---
 curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
-    with st.chat_message(m["role"]): st.markdown(m["content"])
+    # --- ICON LOGIC ---
+    if m["role"] == "assistant":
+        # Make sure "bot_icon.png" is in your folder!
+        avatar_img = "bot_icon.png" 
+    else:
+        # User = transparent/invisible
+        avatar_img = "transparent.png" 
+        
+    with st.chat_message(m["role"], avatar=avatar_img): 
+        st.markdown(m["content"])
 
 col1, col2 = st.columns([0.25, 0.75]) 
 with col1:
@@ -458,10 +465,8 @@ with col1:
 
 # --- GENERATOR HELPER: QUEUE CONSUMER ---
 def queue_to_stream(q):
-    """Yields content from the threaded queue until sentinel is received."""
     while True:
         try:
-            # TURBO POLL: Check queue every 0.05s
             chunk = q.get(timeout=0.05)
             if chunk is None: break  
             if isinstance(chunk, Exception): raise chunk
@@ -473,7 +478,9 @@ if prompt := st.chat_input(f"Innovate here..."):
     
     # User Message
     st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
+    
+    # --- RENDER USER MESSAGE (TRANSPARENT ICON) ---
+    with st.chat_message("user", avatar="transparent.png"):
         st.markdown(prompt)
         if up_files: st.markdown(f"*(Attached {len(up_files)} files)*")
     
@@ -483,7 +490,8 @@ if prompt := st.chat_input(f"Innovate here..."):
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
     # Response with THREADED ANIMATION
-    with st.chat_message("assistant"):
+    # --- RENDER BOT MESSAGE (DROPLET ICON) ---
+    with st.chat_message("assistant", avatar="bot_icon.png"):
         try:
             # 1. Prepare Data
             messages_for_api = []
