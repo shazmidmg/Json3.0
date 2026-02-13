@@ -101,7 +101,7 @@ st.markdown("""
 def check_password():
     if st.session_state.get("password_correct", False):
         return True
-    st.markdown("<h1>🔒 Innovator Access</h1>", unsafe_allow_html=True) 
+    st.markdown("<h1>🔒 J'son 3.0</h1>", unsafe_allow_html=True) 
     password = st.text_input("Enter Password", type="password")
     if st.button("Login"): 
         if password == st.secrets["APP_PASSWORD"]:
@@ -567,5 +567,6 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
 
 
