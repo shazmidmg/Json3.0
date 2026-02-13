@@ -319,7 +319,7 @@ col_logo, col_title = st.columns([0.15, 0.85])
 with col_logo:
     try: st.image("logo.png", width=150) 
     except: st.header("🍹")
-st.markdown("<h3>Shanes Innovator</h3>", unsafe_allow_html=True)
+st.markdown("<h3>Beverage Innovator 3.0</h3>", unsafe_allow_html=True)
 
 # --- 11. KNOWLEDGE BASE (TURBO CACHED) ---
 @st.cache_resource
@@ -567,4 +567,5 @@ if prompt := st.chat_input(f"Innovate here..."):
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
+
 
