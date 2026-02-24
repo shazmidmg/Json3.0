@@ -9,6 +9,7 @@ import time
 import pandas as pd
 import threading
 import queue
+import openai # <--- ADDED: OpenAI for poster generation
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Beverage Innovator 3.0", layout="wide", initial_sidebar_state="expanded")
@@ -118,7 +119,7 @@ if not check_password():
 #  ✅ APP LOGIC STARTS HERE
 # ==========================================
 
-# --- 4. OPTIMIZED DATABASE CONNECTION ---
+# --- 4. OPTIMIZED DATABASE & API CONNECTION ---
 @st.cache_resource
 def connect_to_db():
     try:
@@ -131,14 +132,20 @@ def connect_to_db():
 
 sheet = connect_to_db()
 
+# Initialize Gemini
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+
+# Initialize OpenAI (For Posters)
+client_ai = None
+if "OPENAI_API_KEY" in st.secrets:
+    client_ai = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # --- 5. INITIALIZE SESSION STATE ---
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
-# --- 6. SMART TITLE GENERATOR (GLOBAL SCOPE) ---
+# --- 6. SMART TITLE GENERATOR & POSTER GENERATOR ---
 def get_smart_title(user_text):
     try:
         model = genai.GenerativeModel("gemini-1.5-flash") 
@@ -146,6 +153,27 @@ def get_smart_title(user_text):
         return response.text.strip().replace('"', '').replace("Title:", "")
     except:
         return (user_text[:25] + "..") if len(user_text) > 25 else user_text
+
+def generate_monin_visual(user_prompt):
+    if not client_ai:
+        return "Error: OPENAI_API_KEY missing in secrets."
+    try:
+        style_wrapper = (
+            "Professional food photography, high-end commercial beverage advertisement for Monin. "
+            "Elegant glassware, cinematic studio lighting, minimalist sophisticated background. "
+            f"The image should feature: {user_prompt}. "
+            "Ensure the colors look natural and the textures of the ingredients are sharp."
+        )
+        response = client_ai.images.generate(
+            model="dall-e-3",
+            prompt=style_wrapper,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        return response.data[0].url
+    except Exception as e:
+        return f"Error generating image: {e}"
 
 # --- 7. HISTORY LOADER ---
 if "history_loaded" not in st.session_state:
@@ -433,14 +461,16 @@ curr_msgs = st.session_state.chat_sessions[st.session_state.active_session_id]
 for m in curr_msgs:
     # --- ICON LOGIC ---
     if m["role"] == "assistant":
-        # Make sure "bot_icon.png" is in your folder!
         avatar_img = "bot_icon.png" 
     else:
-        # User = transparent/invisible
         avatar_img = "transparent.png" 
         
     with st.chat_message(m["role"], avatar=avatar_img): 
-        st.markdown(m["content"])
+        # Display image correctly if it's an image link from DALL-E
+        if m["content"].startswith("[Generated Image]"):
+            st.image(m["content"].split("\n")[1])
+        else:
+            st.markdown(m["content"])
 
 col1, col2 = st.columns([0.25, 0.75]) 
 with col1:
@@ -486,87 +516,106 @@ if prompt := st.chat_input(f"Innovate here..."):
     
     # RESET UPLOADER
     st.session_state.uploader_key += 1
-    
     save_to_sheet_background(st.session_state.active_session_id, "user", prompt)
 
-    # Response with THREADED ANIMATION
+    # CHECK FOR GENERATION KEYWORDS
+    image_keywords = ["generate", "poster", "picture", "image", "draw", "visualize", "pic"]
+    is_image_request = any(word in prompt.lower().split() for word in image_keywords)
+
     # --- RENDER BOT MESSAGE (DROPLET ICON) ---
     with st.chat_message("assistant", avatar="bot_icon.png"):
-        try:
-            # 1. Prepare Data
-            messages_for_api = []
-            if knowledge_base:
-                parts = list(knowledge_base)
-                parts.append("System Context: Reference materials attached. Use them.")
-                messages_for_api.append({"role": "user", "parts": parts})
-                messages_for_api.append({"role": "model", "parts": ["Acknowledged."]})
-
-            for msg in st.session_state.chat_sessions[st.session_state.active_session_id]:
-                role = "model" if msg["role"] == "assistant" else "user"
-                # CHECK IF CURRENT MESSAGE HAS ATTACHMENTS
-                if msg["content"] == prompt and msg == st.session_state.chat_sessions[st.session_state.active_session_id][-1]:
-                      current_parts = [prompt]
-                      if processed_files:
-                          current_parts.extend(processed_files)
-                          if any(isinstance(x, Image.Image) for x in processed_files):
-                              current_parts.append("Analyze these images.")
-                      messages_for_api.append({"role": role, "parts": current_parts})
-                else:
-                      messages_for_api.append({"role": role, "parts": [msg["content"]]})
-
-            # 2. Setup Threading Queue
-            response_queue = queue.Queue()
+        if is_image_request and client_ai:
+            # --- IMAGE GENERATION (DALL-E) ---
+            with st.status("🎨 **Designing Your Monin Visual...**", expanded=True) as status:
+                st.markdown("<p class='pulsing-text'>🖌️ Sketching the concept...</p>", unsafe_allow_html=True)
+                img_url = generate_monin_visual(prompt)
+                status.update(label="✅ **Visual Ready!**", state="complete")
             
-            def api_worker():
-                """Runs in background thread to fetch AI response"""
-                try:
-                    stream = model.generate_content(messages_for_api, stream=True)
-                    for chunk in stream:
-                        if chunk.text: response_queue.put(chunk.text)
-                    response_queue.put(None) # Signal Done
-                except Exception as e:
-                    response_queue.put(e)
+            if "http" in img_url:
+                st.image(img_url, caption=f"J'son 3.0 Concept: {prompt}")
+                # Store it nicely in session state
+                st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": f"[Generated Image]\n{img_url}"})
+                save_to_sheet_background(st.session_state.active_session_id, "assistant", f"[Image Link]: {img_url}")
+            else:
+                st.error(img_url)
 
-            # 3. Start API Thread
-            worker_thread = threading.Thread(target=api_worker)
-            worker_thread.start()
+        else:
+            # --- NORMAL CHAT & IMAGE RECOGNITION (GEMINI) ---
+            try:
+                # 1. Prepare Data
+                messages_for_api = []
+                if knowledge_base:
+                    parts = list(knowledge_base)
+                    parts.append("System Context: Reference materials attached. Use them.")
+                    messages_for_api.append({"role": "user", "parts": parts})
+                    messages_for_api.append({"role": "model", "parts": ["Acknowledged."]})
 
-            # 4. SHOW LOOPING ANIMATION (While Queue is Empty)
-            status_placeholder = st.empty()
-            loading_texts = [
-                "🔍 Analyzing request...",
-                "📖 Consulting Flavor Bible...",
-                "🧪 Checking compatibility...",
-                "🎨 Drafting concepts...",
-                "✨ Refining details..."
-            ]
-            idx = 0
-            
-            start_time = time.time()
-            text_update_time = time.time()
-            
-            while response_queue.empty() and worker_thread.is_alive():
-                if time.time() - text_update_time > 0.6:
-                    msg = loading_texts[idx % len(loading_texts)]
-                    status_placeholder.markdown(f"<p class='pulsing-text'>🧠 {msg}</p>", unsafe_allow_html=True)
-                    idx += 1
-                    text_update_time = time.time()
-                time.sleep(0.05)
+                for msg in st.session_state.chat_sessions[st.session_state.active_session_id]:
+                    role = "model" if msg["role"] == "assistant" else "user"
+                    
+                    # Ensure we don't feed image URLs back into Gemini text history
+                    if msg["content"].startswith("[Generated Image]"):
+                        continue
+                        
+                    # CHECK IF CURRENT MESSAGE HAS ATTACHMENTS
+                    if msg["content"] == prompt and msg == st.session_state.chat_sessions[st.session_state.active_session_id][-1]:
+                          current_parts = [prompt]
+                          if processed_files:
+                              current_parts.extend(processed_files)
+                              if any(isinstance(x, Image.Image) for x in processed_files):
+                                  current_parts.append("Analyze these images carefully and incorporate the visual details into your answer.")
+                          messages_for_api.append({"role": role, "parts": current_parts})
+                    else:
+                          messages_for_api.append({"role": role, "parts": [msg["content"]]})
 
-            # 5. STREAM RESPONSE (Once data arrives)
-            status_placeholder.empty()
-            full_response = st.write_stream(queue_to_stream(response_queue))
-            
-            st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
-            save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
-            
-        except Exception as e:
-            st.error(f"Error: {e}")
+                # 2. Setup Threading Queue
+                response_queue = queue.Queue()
+                
+                def api_worker():
+                    try:
+                        stream = model.generate_content(messages_for_api, stream=True)
+                        for chunk in stream:
+                            if chunk.text: response_queue.put(chunk.text)
+                        response_queue.put(None) 
+                    except Exception as e:
+                        response_queue.put(e)
+
+                # 3. Start API Thread
+                worker_thread = threading.Thread(target=api_worker)
+                worker_thread.start()
+
+                # 4. SHOW LOOPING ANIMATION (While Queue is Empty)
+                status_placeholder = st.empty()
+                loading_texts = [
+                    "🔍 Analyzing request...",
+                    "📖 Consulting Flavor Bible...",
+                    "🧪 Checking compatibility...",
+                    "🎨 Drafting concepts...",
+                    "✨ Refining details..."
+                ]
+                idx = 0
+                
+                text_update_time = time.time()
+                
+                while response_queue.empty() and worker_thread.is_alive():
+                    if time.time() - text_update_time > 0.6:
+                        msg = loading_texts[idx % len(loading_texts)]
+                        status_placeholder.markdown(f"<p class='pulsing-text'>🧠 {msg}</p>", unsafe_allow_html=True)
+                        idx += 1
+                        text_update_time = time.time()
+                    time.sleep(0.05)
+
+                # 5. STREAM RESPONSE (Once data arrives)
+                status_placeholder.empty()
+                full_response = st.write_stream(queue_to_stream(response_queue))
+                
+                st.session_state.chat_sessions[st.session_state.active_session_id].append({"role": "assistant", "content": full_response})
+                save_to_sheet_background(st.session_state.active_session_id, "assistant", full_response)
+                
+            except Exception as e:
+                st.error(f"Error: {e}")
 
     # Title Update
     if st.session_state.session_titles.get(st.session_state.active_session_id) == "New Chat":
         new_title = get_smart_title(prompt)
         st.session_state.session_titles[st.session_state.active_session_id] = new_title
-
-
-
